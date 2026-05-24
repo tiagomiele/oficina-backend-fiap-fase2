@@ -1,6 +1,6 @@
 package br.com.oficina.config;
 
-import br.com.oficina.adapter.out.security.JwtAuthenticationFilter;
+import br.com.oficina.infrastructure.security.JwtAuthenticationFilter;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;

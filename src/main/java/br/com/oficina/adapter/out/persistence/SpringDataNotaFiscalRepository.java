@@ -1,6 +1,0 @@
-package br.com.oficina.adapter.out.persistence;
-
-import org.springframework.data.jpa.repository.JpaRepository;
-
-public interface SpringDataNotaFiscalRepository
-    extends JpaRepository<NotaFiscalFornecedorJpaEntity, NotaFiscalFornecedorIdJpa> {}

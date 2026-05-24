@@ -9,11 +9,12 @@ import com.tngtech.archunit.library.Architectures;
 import org.junit.jupiter.api.Test;
 
 /**
- * Valida a arquitetura hexagonal do monolito:
+ * Valida a Clean Architecture do monolito:
  *
  * <pre>
- *   adapter.in.web  → application (ports + services)  → domain
- *   adapter.out.*   → application (ports)              → domain
+ *   infrastructure (controllers, persistence, security, notification)
+ *       → usecase (gateways + services)
+ *       → domain (entities, value objects, enums)
  *   config pode acessar tudo (composition root)
  *   domain é puro (sem Spring/JPA/Servlet)
  * </pre>
@@ -26,27 +27,23 @@ class ArchitectureTest {
           .importPackages("br.com.oficina");
 
   @Test
-  void hexagonalRespeitaDependencias() {
+  void cleanArchitectureRespeitaDependencias() {
     Architectures.layeredArchitecture()
         .consideringAllDependencies()
-        .layer("adapter-in")
-        .definedBy("br.com.oficina.adapter.in..")
-        .layer("adapter-out")
-        .definedBy("br.com.oficina.adapter.out..")
-        .layer("application")
-        .definedBy("br.com.oficina.application..")
+        .layer("infrastructure")
+        .definedBy("br.com.oficina.infrastructure..")
+        .layer("usecase")
+        .definedBy("br.com.oficina.usecase..")
         .layer("domain")
         .definedBy("br.com.oficina.domain..")
         .layer("config")
         .definedBy("br.com.oficina.config..")
-        .whereLayer("adapter-in")
+        .whereLayer("infrastructure")
         .mayOnlyBeAccessedByLayers("config")
-        .whereLayer("adapter-out")
-        .mayOnlyBeAccessedByLayers("config", "adapter-in")
-        .whereLayer("application")
-        .mayOnlyBeAccessedByLayers("adapter-in", "adapter-out", "config")
+        .whereLayer("usecase")
+        .mayOnlyBeAccessedByLayers("infrastructure", "config")
         .whereLayer("domain")
-        .mayOnlyBeAccessedByLayers("application", "adapter-in", "adapter-out", "config")
+        .mayOnlyBeAccessedByLayers("usecase", "infrastructure", "config")
         .check(CLASSES);
   }
 
@@ -77,13 +74,13 @@ class ArchitectureTest {
   }
 
   @Test
-  void applicationNaoDependeDeAdapters() {
+  void usecaseNaoDependeDeInfrastructure() {
     noClasses()
         .that()
-        .resideInAPackage("br.com.oficina.application..")
+        .resideInAPackage("br.com.oficina.usecase..")
         .should()
         .dependOnClassesThat()
-        .resideInAnyPackage("br.com.oficina.adapter..")
+        .resideInAnyPackage("br.com.oficina.infrastructure..")
         .check(CLASSES);
   }
 }

@@ -31,12 +31,6 @@ services:
       JWT_SECRET: ${JWT_SECRET:-change-me-in-production-at-least-32-chars-long-please}
       ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@oficina.local}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin123}
-      SMTP_HOST: ${SMTP_HOST:-localhost}
-      SMTP_PORT: ${SMTP_PORT:-1025}
-      SMTP_USER: ${SMTP_USER:-}
-      SMTP_PASS: ${SMTP_PASS:-}
-      SMTP_AUTH: ${SMTP_AUTH:-false}
-      SMTP_TLS: ${SMTP_TLS:-false}
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-}
     ports:
       - "8080:8080"
