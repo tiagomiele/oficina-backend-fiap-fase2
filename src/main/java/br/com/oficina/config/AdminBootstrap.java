@@ -2,7 +2,7 @@ package br.com.oficina.config;
 
 import br.com.oficina.domain.enums.Papel;
 import br.com.oficina.domain.model.User;
-import br.com.oficina.domain.repository.UserRepository;
+import br.com.oficina.application.port.out.UserRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;

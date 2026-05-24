@@ -1,7 +1,7 @@
 package br.com.oficina.domain.model;
 
 import br.com.oficina.domain.enums.StatusOrcamentoItem;
-import br.com.oficina.exception.BusinessException;
+import br.com.oficina.domain.exception.BusinessException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;

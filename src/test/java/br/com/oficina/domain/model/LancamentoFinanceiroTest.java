@@ -5,7 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import br.com.oficina.domain.enums.OrigemLancamento;
 import br.com.oficina.domain.enums.TipoLancamento;
-import br.com.oficina.exception.BusinessException;
+import br.com.oficina.domain.exception.BusinessException;
 import java.time.Instant;
 import java.time.LocalDate;
 import org.junit.jupiter.api.Test;

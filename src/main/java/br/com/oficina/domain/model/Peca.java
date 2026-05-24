@@ -1,6 +1,6 @@
 package br.com.oficina.domain.model;
 
-import br.com.oficina.exception.BusinessException;
+import br.com.oficina.domain.exception.BusinessException;
 import java.time.Instant;
 
 public class Peca {
