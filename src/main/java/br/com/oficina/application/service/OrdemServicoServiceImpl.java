@@ -11,6 +11,7 @@ import br.com.oficina.domain.model.Placa;
 import br.com.oficina.domain.model.Servico;
 import br.com.oficina.domain.model.VeiculoId;
 import br.com.oficina.application.port.out.ClienteRepository;
+import br.com.oficina.application.port.out.NotificacaoPort;
 import br.com.oficina.application.port.out.NumeroOSGenerator;
 import br.com.oficina.application.port.out.OrdemServicoRepository;
 import br.com.oficina.application.port.out.PecaRepository;
@@ -24,6 +25,9 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class OrdemServicoServiceImpl {
 
+  public record ItemAbertura(
+      Long idServicoSku, TipoItem tipo, int quantidade, java.math.BigDecimal precoUnitario) {}
+
   private final OrdemServicoRepository repo;
   private final NumeroOSGenerator numerador;
   private final ClienteRepository clientes;
@@ -32,6 +36,7 @@ public class OrdemServicoServiceImpl {
   private final PecaRepository pecas;
   private final EstoqueServiceImpl estoque;
   private final FinanceiroServiceImpl financeiro;
+  private final NotificacaoPort notificacao;
 
   public OrdemServicoServiceImpl(
       OrdemServicoRepository repo,
@@ -41,7 +46,8 @@ public class OrdemServicoServiceImpl {
       ServicoRepository servicos,
       PecaRepository pecas,
       EstoqueServiceImpl estoque,
-      FinanceiroServiceImpl financeiro) {
+      FinanceiroServiceImpl financeiro,
+      NotificacaoPort notificacao) {
     this.repo = repo;
     this.numerador = numerador;
     this.clientes = clientes;
@@ -50,6 +56,25 @@ public class OrdemServicoServiceImpl {
     this.pecas = pecas;
     this.estoque = estoque;
     this.financeiro = financeiro;
+    this.notificacao = notificacao;
+  }
+
+  @Transactional
+  public OrdemServico abrir(
+      Long idCliente, String placaRaw, String descricaoProblema, List<ItemAbertura> itens) {
+    OrdemServico os = abrir(idCliente, placaRaw, descricaoProblema);
+    if (itens == null || itens.isEmpty()) {
+      return os;
+    }
+    String numero = os.getNumero().valor();
+    for (ItemAbertura item : itens) {
+      if (item.tipo() == TipoItem.SERVICO) {
+        os = adicionarServico(numero, item.idServicoSku(), item.quantidade(), item.precoUnitario());
+      } else {
+        os = adicionarPeca(numero, item.idServicoSku(), item.quantidade(), item.precoUnitario());
+      }
+    }
+    return os;
   }
 
   @Transactional
@@ -115,14 +140,18 @@ public class OrdemServicoServiceImpl {
   public OrdemServico enviarParaAprovacao(String numero) {
     OrdemServico os = carregar(numero);
     os.enviarParaAprovacao();
-    return repo.salvar(os);
+    OrdemServico salva = repo.salvar(os);
+    notificarCliente(salva);
+    return salva;
   }
 
   @Transactional
   public OrdemServico aprovar(String numero) {
     OrdemServico os = carregar(numero);
     os.aprovar();
-    return repo.salvar(os);
+    OrdemServico salva = repo.salvar(os);
+    notificarCliente(salva);
+    return salva;
   }
 
   @Transactional
@@ -130,7 +159,9 @@ public class OrdemServicoServiceImpl {
     OrdemServico os = carregar(numero);
     List<ItemOrcamento> itensCancelados = os.rejeitarCancelar(motivo);
     devolverPecasAoEstoque(numero, itensCancelados);
-    return repo.salvar(os);
+    OrdemServico salva = repo.salvar(os);
+    notificarCliente(salva);
+    return salva;
   }
 
   @Transactional
@@ -138,14 +169,18 @@ public class OrdemServicoServiceImpl {
     OrdemServico os = carregar(numero);
     List<ItemOrcamento> itensCancelados = os.rejeitarRefazer(motivo);
     devolverPecasAoEstoque(numero, itensCancelados);
-    return repo.salvar(os);
+    OrdemServico salva = repo.salvar(os);
+    notificarCliente(salva);
+    return salva;
   }
 
   @Transactional
   public OrdemServico concluirReparo(String numero) {
     OrdemServico os = carregar(numero);
     os.concluirReparo();
-    return repo.salvar(os);
+    OrdemServico salva = repo.salvar(os);
+    notificarCliente(salva);
+    return salva;
   }
 
   @Transactional
@@ -155,6 +190,7 @@ public class OrdemServicoServiceImpl {
     OrdemServico salva = repo.salvar(os);
     financeiro.lancarContaAReceberOS(
         salva.getValorTotalConserto(), numero, "Pagamento OS " + numero);
+    notificarCliente(salva);
     return salva;
   }
 
@@ -162,7 +198,9 @@ public class OrdemServicoServiceImpl {
   public OrdemServico entregar(String numero) {
     OrdemServico os = carregar(numero);
     os.entregar();
-    return repo.salvar(os);
+    OrdemServico salva = repo.salvar(os);
+    notificarCliente(salva);
+    return salva;
   }
 
   @Transactional(readOnly = true)
@@ -175,10 +213,37 @@ public class OrdemServicoServiceImpl {
     return repo.listar();
   }
 
+  @Transactional(readOnly = true)
+  public List<OrdemServico> listarAtivas() {
+    return repo.listar().stream()
+        .filter(os -> os.getStatus().visivelNaListagem())
+        .sorted(
+            java.util.Comparator.comparingInt(os -> os.getStatus().getPrioridadeListagem()))
+        .toList();
+  }
+
   private OrdemServico carregar(String numero) {
     return repo.porNumero(NumeroOS.de(numero))
         .orElseThrow(
             () -> new BusinessException("OS_NAO_ENCONTRADA", "Ordem de serviço não encontrada"));
+  }
+
+  private void notificarCliente(OrdemServico os) {
+    clientes
+        .porId(os.getIdCliente())
+        .filter(c -> c.getEmail() != null && !c.getEmail().isBlank())
+        .ifPresent(
+            c ->
+                notificacao.enviar(
+                    c.getEmail(),
+                    "OS " + os.getNumero().valor() + " — " + os.getStatus(),
+                    "Prezado(a) "
+                        + c.getNome()
+                        + ", sua Ordem de Serviço "
+                        + os.getNumero().valor()
+                        + " teve o status atualizado para: "
+                        + os.getStatus()
+                        + "."));
   }
 
   private void devolverPecasAoEstoque(String numero, List<ItemOrcamento> itens) {

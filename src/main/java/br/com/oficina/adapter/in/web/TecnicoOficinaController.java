@@ -102,6 +102,17 @@ public class TecnicoOficinaController {
     return service.listar().stream().map(OrdemServicoResponse::de).toList();
   }
 
+  @Operation(
+      summary = "03.03.B - Listar OS ativas (com prioridade)",
+      description =
+          "Retorna apenas OS em andamento, ordenadas por prioridade de atendimento:"
+              + " EM_EXECUCAO (1) > AGUARDANDO_APROVACAO (2) > EM_DIAGNOSTICO (3) >"
+              + " RECEBIDA (4). Exclui ENTREGUE e CANCELADA.")
+  @GetMapping("/ativas")
+  public List<OrdemServicoResponse> listarAtivas() {
+    return service.listarAtivas().stream().map(OrdemServicoResponse::de).toList();
+  }
+
   @Operation(summary = "03.04 - Buscar OS pelo número")
   @GetMapping("/{numeroOs}")
   public OrdemServicoResponse buscar(

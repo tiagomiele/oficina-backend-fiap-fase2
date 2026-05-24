@@ -18,6 +18,14 @@ spring:
   flyway:
     enabled: true
     baseline-on-migrate: true
+  mail:
+    host: ${SMTP_HOST:localhost}
+    port: ${SMTP_PORT:1025}
+    username: ${SMTP_USER:}
+    password: ${SMTP_PASS:}
+    properties:
+      mail.smtp.auth: ${SMTP_AUTH:false}
+      mail.smtp.starttls.enable: ${SMTP_TLS:false}
   jackson:
     deserialization:
       fail-on-unknown-properties: true

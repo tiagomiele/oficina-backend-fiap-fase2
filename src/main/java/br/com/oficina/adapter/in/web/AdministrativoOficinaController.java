@@ -1,5 +1,6 @@
 package br.com.oficina.adapter.in.web;
 
+import br.com.oficina.domain.enums.TipoItem;
 import br.com.oficina.domain.model.Cliente;
 import br.com.oficina.domain.model.EstoquePeca;
 import br.com.oficina.domain.model.ItemNotaFiscalFornecedor;
@@ -365,10 +366,13 @@ public class AdministrativoOficinaController {
 
   // ----- OS abrir -----
   @Schema(
-      description = "Dados para abertura de uma OS.",
+      description =
+          "Dados para abertura de uma OS. Pode incluir serviços e peças na mesma requisição.",
       example =
           "{\"idCliente\":42,\"placa\":\"ABC1234\","
-              + "\"descricaoProblema\":\"Barulho na suspensão dianteira\"}")
+              + "\"descricaoProblema\":\"Barulho na suspensão dianteira\","
+              + "\"itens\":[{\"idServicoSku\":1,\"tipo\":\"SERVICO\",\"quantidade\":1},"
+              + "{\"idServicoSku\":2,\"tipo\":\"PECA\",\"quantidade\":2,\"precoUnitario\":45.00}]}")
   public record AbrirOsRequest(
       @Schema(description = "ID do cliente.", example = "42") @NotNull Long idCliente,
       @Schema(
@@ -379,7 +383,26 @@ public class AdministrativoOficinaController {
       @Schema(
               description = "Descrição do problema relatado pelo cliente.",
               example = "Barulho na suspensão dianteira")
-          String descricaoProblema) {}
+          String descricaoProblema,
+      @Schema(description = "Itens (serviços e peças) a incluir na OS. Opcional.")
+          List<ItemAberturaRequest> itens) {}
+
+  @Schema(description = "Item (serviço ou peça) para incluir na abertura da OS.")
+  public record ItemAberturaRequest(
+      @Schema(description = "ID do serviço ou SKU da peça.", example = "1") @NotNull
+          Long idServicoSku,
+      @Schema(
+              description = "Tipo: SERVICO ou PECA.",
+              example = "SERVICO",
+              allowableValues = {"SERVICO", "PECA"})
+          @NotNull
+          TipoItem tipo,
+      @Schema(description = "Quantidade (>= 1).", example = "1") @NotNull @Min(1) Integer quantidade,
+      @Schema(
+              description =
+                  "Preço unitário (opcional, usa preço do catálogo se omitido).",
+              example = "100.00")
+          BigDecimal precoUnitario) {}
 
   // =====================================================================================
   // 01 - Serviços
@@ -636,10 +659,22 @@ public class AdministrativoOficinaController {
   @Operation(
       summary = "02.6.01 - Abrir OS",
       description =
-          "Gera o número no formato OS-MMAAAA-NNNNNN e inicia o fluxo em status RECEBIDA.")
+          "Gera o número no formato OS-MMAAAA-NNNNNN e inicia o fluxo em status RECEBIDA."
+              + " Se itens forem informados, já adiciona serviços e peças ao orçamento"
+              + " (transição automática para EM_DIAGNOSTICO).")
   @PostMapping("/ordens-servico")
   public ResponseEntity<OrdemServicoResponse> abrirOs(@Valid @RequestBody AbrirOsRequest req) {
-    OrdemServico os = osService.abrir(req.idCliente(), req.placa(), req.descricaoProblema());
+    List<OrdemServicoServiceImpl.ItemAbertura> itens =
+        req.itens() == null
+            ? List.of()
+            : req.itens().stream()
+                .map(
+                    i ->
+                        new OrdemServicoServiceImpl.ItemAbertura(
+                            i.idServicoSku(), i.tipo(), i.quantidade(), i.precoUnitario()))
+                .toList();
+    OrdemServico os =
+        osService.abrir(req.idCliente(), req.placa(), req.descricaoProblema(), itens);
     return ResponseEntity.status(HttpStatus.CREATED).body(OrdemServicoResponse.de(os));
   }
 
