@@ -1,281 +1,428 @@
-# oficina-backend
+# Oficina Backend — Sistema de Gestão de Oficina Mecânica
 
-[![CI](https://github.com/tiagomiele/POC-Fiap/actions/workflows/ci.yml/badge.svg)](https://github.com/tiagomiele/POC-Fiap/actions/workflows/ci.yml)
+[![CI](https://github.com/tiagomiele/oficina-backend-fiap-fase2/actions/workflows/ci.yml/badge.svg)](https://github.com/tiagomiele/oficina-backend-fiap-fase2/actions/workflows/ci.yml)
 
-**MVP do back-end para gestão de uma oficina mecânica** — Entrega: 12/05/2026 — **Fase 1 do Tech Challenge (SOAT / FIAP)**
-
-## 🎯 Objetivo
-
-Desenvolver um sistema que permita uma oficina mecânica de médio porte controlar o **ciclo de vida completo de uma Ordem de Serviço (OS)**: desde o recebimento do veículo até o pagamento final, passando por diagnóstico, orçamento, aprovação do cliente, execução, finalização e entrega.
-
-### Escopo MVP
-
-O sistema oferece funcionalidades para:
-
-- **Gestão de clientes e veículos** — cadastro e manutenção de dados
-- **Catálogo de serviços e peças** — controle de preços e disponibilidade
-- **Estoque** — rastreamento de peças com movimentação e saldo
-- **Notas fiscais de fornecedor** — registro de compras e entrada de peças
-- **Ordens de Serviço (OS)** — ciclo completo com múltiplos orçamentos
-- **Conta corrente** — contas a pagar (fornecedores) e contas a receber (clientes)
-- **Relatórios** — tempo médio de execução por serviço
-- **Canal público** — consulta de status da OS pelo cliente
-
-> 🚀 Implementado com boas práticas de **Domain-Driven Design (DDD)**, **testes ≥ 80%**, **análise estática (SonarQube)**, **análise de vulnerabilidades (Dependency-Track)** e **CI/CD automatizado**.
-
-## Sumário
-
-- [Arquitetura (monolito em camadas)](#arquitetura-monolito-em-camadas)
-- [Stack](#stack)
-- [Como rodar localmente](#como-rodar-localmente)
-- [Endpoints principais](#endpoints-principais)
-- [Consulta pública do status da OS](#consulta-pública-do-status-da-os)
-- [Token JWT com validade configurável](#token-jwt-com-validade-configurável)
-- [Cálculo de tempo médio por serviço](#cálculo-de-tempo-médio-por-serviço)
-- [Testes e cobertura ≥ 80%](#testes-e-cobertura--80)
-- [SonarQube (Análise estática de segurança: SAST—Static Application Security Testing)](#sonarqube-análise-estática-de-segurança-sast--static-application-security-testing)
-- [Segurança e análise de vulnerabilidades (SCA)](#segurança-e-análise-de-vulnerabilidades---análise-de-segurança-das-dependências-do-projeto-sca--software-composition-analysis)
-- [Estrutura de pacotes](#estrutura-de-pacotes)
-- [Documentação](#-documentação)
+**Back-end para gestão completa de uma oficina mecânica de médio porte** — Tech Challenge SOAT / FIAP — Java 21 · Spring Boot 3.3 · PostgreSQL 16 · Clean Architecture · DDD
 
 ---
 
-## Arquitetura (monolito em camadas)
+## Sumário
 
-**Monolito MVP com **arquitetura em camadas flat** — adequada para o escopo do Tech Challenge Fase 1.
+- [Sobre o Projeto](#sobre-o-projeto)
+- [Funcionalidades](#funcionalidades)
+- [Arquitetura — Clean Architecture](#arquitetura--clean-architecture)
+- [Tecnologias](#tecnologias)
+- [Pré-requisitos](#pré-requisitos)
+- [Passo a Passo para Execução](#passo-a-passo-para-execução)
+- [Variáveis de Ambiente](#variáveis-de-ambiente)
+- [Documentação da API (Swagger)](#documentação-da-api-swagger)
+- [Endpoints Principais](#endpoints-principais)
+- [Fluxo da Ordem de Serviço](#fluxo-da-ordem-de-serviço)
+- [Estrutura do Projeto](#estrutura-do-projeto)
+- [Testes e Cobertura](#testes-e-cobertura)
+- [Validação de Arquitetura (ArchUnit)](#validação-de-arquitetura-archunit)
 
-### Estrutura de pacotes
+---
+
+## Sobre o Projeto
+
+Sistema que permite uma oficina mecânica controlar o **ciclo de vida completo de uma Ordem de Serviço (OS)**: desde o recebimento do veículo até o pagamento e entrega, passando por diagnóstico, orçamento, aprovação do cliente e execução do reparo.
+
+O projeto aplica **Domain-Driven Design (DDD)** com padrões táticos (agregados, value objects, entidades ricas) e está estruturado em **Clean Architecture** com 3 camadas isoladas.
+
+### O que o sistema oferece
+
+- Cadastro e gestão de **clientes** e **veículos**
+- Catálogo de **serviços** e **peças** com controle de preços
+- Controle de **estoque** de peças com rastreabilidade de movimentações
+- Registro de **notas fiscais de fornecedor** com entrada automática no estoque
+- Ciclo completo de **Ordens de Serviço** com múltiplos orçamentos
+- **Conta corrente** da oficina (contas a pagar e contas a receber)
+- **Relatórios** de tempo médio de execução por OS
+- **Consulta pública** de status da OS pelo cliente (sem autenticação)
+- **Notificação fictícia** ao cliente nas transições de status (log via SLF4J)
+
+---
+
+## Funcionalidades
+
+### Gestão de Clientes e Veículos
+- Cadastro com validação de **CPF/CNPJ** (dígitos verificadores)
+- Suporte a **placa antiga** (ABC1234) e **Mercosul** (ABC1D23)
+- Vínculo veículo ↔ cliente com PK composta (placa + idCliente)
+
+### Ordens de Serviço
+- **Abertura unificada** — uma única chamada POST cria a OS já com os itens (serviços e/ou peças) no corpo da requisição
+- **Listagem de OS ativas** com ordenação por prioridade: `EM_EXECUCAO(1) > AGUARDANDO_APROVACAO(2) > EM_DIAGNOSTICO(3) > RECEBIDA(4)` — exclui automaticamente ENTREGUE e CANCELADA
+- Suporte a **múltiplos orçamentos** (rejeitar e refazer)
+- Transições de status controladas com **máquina de estados**
+- **Notificação fictícia** ao cliente em cada transição de status (log com marcador `[NOTIFICAÇÃO FICTÍCIA]`)
+
+### Estoque e Suprimentos
+- Saldo de estoque **nunca negativo** (invariante no domínio)
+- 4 tipos de movimentação: `ENTRADA_NF`, `ESTORNO_NF`, `CONSUMO_ORCAMENTO`, `DEVOLUCAO_ORCAMENTO`
+- Peças consumidas ao serem adicionadas ao orçamento; devolvidas se o orçamento for rejeitado
+- Registro de NF de fornecedor com crédito automático no estoque e geração de conta a pagar
+
+### Financeiro
+- **Contas a pagar**: geradas na emissão de NF de fornecedor
+- **Contas a receber**: geradas na confirmação de pagamento da OS
+- Suporte a estorno de lançamentos
+
+### Relatórios
+- Tempo médio de execução por OS (baseado nos timestamps `inicio_execucao` e `fim_execucao`)
+
+### Segurança
+- Autenticação via **JWT** (HMAC-SHA256) com validade configurável (1–1440 min)
+- Senhas hash com **BCrypt(12)**
+- 2 perfis de acesso: `FUNCIONARIO_DA_OFICINA` (admin) e `TECNICO_DA_OFICINA`
+- Hierarquia: funcionário herda todas as permissões do técnico
+- Consulta pública do status da OS **sem autenticação**
+
+---
+
+## Arquitetura — Clean Architecture
+
+O projeto segue os princípios da **Clean Architecture (Uncle Bob)**, organizado em 3 camadas com dependências sempre apontando para dentro:
 
 ```
-src/main/java/br/com/oficina
-├── config/                # SecurityConfig, JwtAuthenticationFilter, OpenApiConfig, AdminBootstrap
-├── controller/            # Camada HTTP (REST)
-├── service/               # Regras de negócio (interfaces) + service/impl/ (implementações)
-├── domain/                # Modelo rico (DDD tático)
-│   ├── model/             #   Entidades + Value Objects
-│   ├── enums/             #   Status e demais enums de negócio
-│   └── repository/        #   Interfaces (contratos) dos repositórios
-├── infrastructure/        # Implementações técnicas
-│   ├── repository/        #   Entities JPA + implementações dos repositórios
-│   └── security/          #   JwtTokenService
-├── dto/                   # Objetos de transporte
-│   ├── request/           #   Records de entrada (com @Schema + @NotNull/@Size)
-│   └── response/          #   Records de saída (com @Schema + example)
-├── mapper/                # Conversão DTO ↔ domínio
-├── exception/             # BusinessException, GlobalExceptionHandler, ApiError
-└── OficinaApplication.java
+┌──────────────────────────────────────────────────┐
+│                INFRASTRUCTURE                     │
+│  Controllers · JPA · Security · Notification      │
+│  (frameworks, drivers, adaptadores externos)      │
+│                                                   │
+│  ┌──────────────────────────────────────────┐     │
+│  │              USECASE                      │     │
+│  │  Services · Gateways (interfaces)         │     │
+│  │  (casos de uso, regras de aplicação)      │     │
+│  │                                           │     │
+│  │  ┌──────────────────────────────────┐     │     │
+│  │  │            DOMAIN                 │     │     │
+│  │  │  Entities · Value Objects · Enums │     │     │
+│  │  │  (regras de negócio puras)        │     │     │
+│  │  └──────────────────────────────────┘     │     │
+│  └──────────────────────────────────────────┘     │
+└──────────────────────────────────────────────────┘
 ```
 
-Regras de camadas são validadas automaticamente com **ArchUnit** (ver `src/test/java/br/com/oficina/architecture/ArchitectureTest.java`):
+**Regras de dependência:**
+- `domain` → **puro**: sem Spring, sem JPA, sem Servlet — apenas Java puro
+- `usecase` → depende de `domain`; define interfaces `*Gateway` e `*Repository` que a infraestrutura implementa
+- `infrastructure` → implementa gateways e repositórios; depende de `usecase` e `domain`
 
-- `domain.model` **não pode** depender de `controller`, `service`, `infrastructure`, Spring ou JPA.
-- `controller` só pode depender de `service`, `dto`, `mapper`, `exception`.
-- `infrastructure` só pode depender de `domain` e do próprio `infrastructure`.
+Essas regras são **validadas automaticamente** por 4 testes ArchUnit a cada build.
 
-## Stack
+---
+
+## Tecnologias
 
 | Camada | Tecnologia |
 |---|---|
 | Linguagem | Java 21 (LTS) |
 | Build | Maven 3.9 (via wrapper `./mvnw`) |
-| Framework | Spring Boot 3.3 |
+| Framework | Spring Boot 3.3.4 |
 | Persistência | Spring Data JPA + Hibernate 6 + Flyway |
-| Banco | PostgreSQL 16 |
-| Segurança | Spring Security 6 + JWT (`jjwt`) + BCrypt |
+| Banco de Dados | PostgreSQL 16 |
+| Segurança | Spring Security 6 + JWT (jjwt) + BCrypt |
 | Validação | Jakarta Validation |
-| OpenAPI | springdoc-openapi (`/swagger-ui.html`) |
-| Observabilidade | Spring Actuator + Logback JSON (perfil `prod`) |
-| Testes | JUnit 5, AssertJ, Mockito, Testcontainers, RestAssured, ArchUnit |
-| Cobertura | JaCoCo (gate ≥ 80% em `br.com.oficina.domain.model`) |
-| Qualidade | SonarQube Community Edition (via `sonar-maven-plugin`) |
-| Segurança | SBOM CycloneDX + OWASP Dependency-Track + Trivy (Dependency-Check em profile opcional) |
+| Documentação API | springdoc-openapi (Swagger UI) |
+| Observabilidade | Spring Actuator + Logback |
+| Containerização | Docker (multi-stage) + Docker Compose |
+| Testes | JUnit 5, AssertJ, Mockito, ArchUnit, Testcontainers, RestAssured |
+| Cobertura | JaCoCo (gate ≥ 80% em `domain.model`) |
+| Segurança (CI) | SBOM CycloneDX + Trivy |
 
-## Como rodar localmente
+---
 
-### Pré-requisitos
+## Pré-requisitos
 
 - **Docker Desktop** (Windows/Mac) ou **Docker Engine + Docker Compose v2** (Linux)
-  - RAM disponível para o Docker: **≥ 6 GB** (Settings → Resources)
 - **Git**
-- **Java 21 (LTS)** — só necessário se for rodar testes/sonar/SBOM fora do container (o container Docker já traz tudo)
-- (Opcional) `curl` no PATH — no Windows o `curl.exe` já vem com o sistema desde o Win10
+- (Opcional) **Java 21** — apenas se quiser rodar testes localmente fora do container
+
+---
+
+## Passo a Passo para Execução
 
 ### 1. Clonar o repositório
 
-```powershell
-# Windows (PowerShell) - escolha qualquer pasta para os seus projetos
-cd <sua-pasta>          # ex: cd C:\projetos
-git clone https://github.com/seu-usario/seu-projeto.git
-cd seu-projeto
+```bash
+git clone https://github.com/tiagomiele/oficina-backend-fiap-fase2.git
+cd oficina-backend-fiap-fase2
 ```
 
-> ⚠️ **IMPORTANTE**: todos os comandos `docker compose` mais abaixo precisam ser executados **a partir da pasta raiz do projeto** (onde estão os arquivos `docker-compose.yml`, `docker-compose.dep-track.yml`, `docker-compose.sonarqube.yml` e `pom.xml`).
-
-### 2. Subir banco + aplicação (Docker Compose)
+### 2. Subir a aplicação com Docker Compose
 
 ```bash
-# sobe Postgres + Adminer + aplicação Spring Boot, faz build da imagem
 docker compose up --build -d
 ```
 
-> Para subir somente o banco (e rodar a aplicação localmente via `./mvnw spring-boot:run`):
+Esse comando sobe 3 serviços:
+- **db** — PostgreSQL 16 (porta 5432)
+- **app** — Aplicação Spring Boot (porta 8080)
+- **adminer** — Interface web para o banco de dados (porta 8081)
+
+> Para subir apenas o banco (e rodar a aplicação localmente):
 > ```bash
 > docker compose up db adminer -d
+> ./mvnw spring-boot:run
 > ```
 
-### 3. Acessar
+### 3. Aguardar a aplicação ficar pronta
 
-| Serviço | URL | Credenciais |
-|---|---|---|
-| API | http://localhost:8080 | — |
-| Swagger UI | http://localhost:8080/swagger-ui.html | — |
-| Adminer (UI do Postgres) | http://localhost:8081 | system: `PostgreSQL`, server: `db`, user: `oficina`, senha: `oficina`, db: `oficina` |
-| Actuator health | http://localhost:8080/actuator/health | — |
+```bash
+# Verificar se a aplicação está saudável
+curl http://localhost:8080/actuator/health
+```
 
-### 4. Primeiro admin (bootstrap)
+Resposta esperada:
+```json
+{"status":"UP"}
+```
+
+### 4. Fazer login e obter o token JWT
+
+A aplicação cria automaticamente um usuário administrador no primeiro boot:
 
 | Campo | Valor padrão |
 |---|---|
-| e-mail | `admin@oficina.local` |
-| senha | `admin123` |
+| E-mail | `admin@oficina.local` |
+| Senha | `admin123` |
 
-
-```powershell
-# Exemplo de override antes do up:
-$env:ADMIN_EMAIL = "seu-admin@minhaempresa.com"
-$env:ADMIN_PASSWORD = "uma-senha-forte"
-docker compose up --build -d
+```bash
+curl -s -X POST http://localhost:8080/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"admin@oficina.local","senha":"admin123"}'
 ```
 
-### Variáveis de ambiente relevantes
+Resposta:
+```json
+{
+  "token": "eyJhbGciOiJIUzI1NiI...",
+  "tipo": "Bearer",
+  "expiraEm": "2026-05-24T19:24:00Z"
+}
+```
+
+### 5. Usar o token nas requisições autenticadas
+
+```bash
+# Salvar o token em uma variável
+TOKEN=$(curl -s -X POST http://localhost:8080/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"admin@oficina.local","senha":"admin123"}' | jq -r '.token')
+
+# Exemplo: listar clientes
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/v1/clientes
+```
+
+### 6. Acessar o Swagger UI
+
+Abra no navegador: **http://localhost:8080/swagger-ui.html**
+
+O Swagger UI lista todos os endpoints organizados em 4 grupos:
+1. **01 — Autenticação** — login e cadastro de usuários
+2. **02 — Administrativo** — clientes, veículos, serviços, peças, estoque, NF, OS, financeiro, relatórios
+3. **03 — Técnico** — diagnóstico, orçamento, execução, finalização
+4. **04 — Cliente** — aprovação, rejeição, pagamento, consulta pública
+
+### 7. Acessar o Adminer (interface do banco)
+
+Abra no navegador: **http://localhost:8081**
+
+| Campo | Valor |
+|---|---|
+| Sistema | PostgreSQL |
+| Servidor | db |
+| Usuário | oficina |
+| Senha | oficina |
+| Base de dados | oficina |
+
+### 8. Parar a aplicação
+
+```bash
+docker compose down
+```
+
+Para remover também os volumes (dados do banco):
+```bash
+docker compose down -v
+```
+
+---
+
+## Variáveis de Ambiente
 
 | Variável | Default | Descrição |
 |---|---|---|
-| `DB_URL` | `jdbc:postgresql://localhost:5432/oficina` | JDBC URL |
-| `DB_USER` / `DB_PASSWORD` | `oficina` / `oficina` | Credenciais DB (locais) |
-| `JWT_SECRET` | placeholder em `application.yml` (≥ 32 bytes) | **Trocar em produção.** Gere com `openssl rand -base64 48` |
-| `JWT_EXPIRATION_MINUTES` | `60` | Validade padrão do token em minutos |
-| `ADMIN_EMAIL` / `ADMIN_PASSWORD` | `admin@oficina.local` / `admin123` | Seed do primeiro admin |
-| `SERVER_PORT` | `8080` | Porta HTTP |
+| `DB_URL` | `jdbc:postgresql://localhost:5432/oficina` | URL JDBC do banco |
+| `DB_USER` | `oficina` | Usuário do banco |
+| `DB_PASSWORD` | `oficina` | Senha do banco |
+| `JWT_SECRET` | placeholder (≥ 32 bytes) | Chave HMAC para tokens JWT. **Trocar em produção.** Gere com: `openssl rand -base64 48` |
+| `ADMIN_EMAIL` | `admin@oficina.local` | E-mail do admin criado no bootstrap |
+| `ADMIN_PASSWORD` | `admin123` | Senha do admin criado no bootstrap |
+| `SERVER_PORT` | `8080` | Porta HTTP da aplicação |
+| `SPRING_PROFILES_ACTIVE` | (vazio) | Perfil Spring ativo |
 
-## Endpoints principais
+---
 
-Após subir a aplicação, o **Swagger UI** em http://localhost:8080/swagger-ui.html lista todos os endpoints com:
+## Documentação da API (Swagger)
 
-- Descrição detalhada (`@Operation`) por endpoint.
-- Nomes dos parâmetros descritivos (ex: `numeroOs` com formato `OS-MMAAAA-NNNNNN` e exemplo `OS-042026-000001`).
-- Schemas de cada DTO com exemplo preenchido (`@Schema(example=...)`).
-- Códigos de resposta documentados (200, 201, 204, 400, 401, 403, 404, 409, 422).
+Após subir a aplicação, a documentação interativa está disponível em:
 
-Papéis administrativos: `FUNCIONARIO_DA_OFICINA` (cadastros + abertura/entrega) e `TECNICO_DA_OFICINA` (diagnóstico, orçamento, execução, finalização).
+- **Swagger UI**: http://localhost:8080/swagger-ui.html
+- **OpenAPI JSON**: http://localhost:8080/v3/api-docs
 
-| Área | Exemplo de rota | Auth |
-|---|---|---|
-| Autenticação | `POST /auth/login` | pública |
-| Consulta pública | `GET /consulta/ordens-servico/{numeroOs}/status` | pública |
-| Clientes | `POST/GET/PUT /api/v1/clientes/**` | admin |
-| Veículos | `POST/GET/PUT /api/v1/veiculos/**` | admin |
-| Catálogo | `/api/v1/servicos/**`, `/api/v1/pecas/**` | admin |
-| Estoque | `POST /api/v1/estoque/ajustar` | admin |
-| NF fornecedor | `/api/v1/notas-fiscais-fornecedor/**` | admin |
-| Ordens de serviço | `POST /api/v1/ordens-servico/**` | admin |
-| Financeiro | `GET /api/v1/contas-a-pagar`, `GET /api/v1/contas-a-receber` | admin |
-| Relatórios | `GET /api/v1/relatorios/tempo-medio-por-os` | admin |
+Cada endpoint possui:
+- Descrição detalhada via `@Operation`
+- Schemas de request/response com exemplos preenchidos
+- Códigos de resposta documentados (200, 201, 204, 400, 401, 403, 404, 409, 422)
 
-## Consulta pública do status da OS
+---
 
-Endpoint destinado ao cliente acompanhar o andamento do reparo pelo número da OS impresso no comprovante:
+## Endpoints Principais
+
+| Área | Rota | Método | Auth |
+|---|---|---|---|
+| **Login** | `/auth/login` | POST | Pública |
+| **Cadastro de usuário** | `/usuarios` | POST | JWT (admin) |
+| **Clientes** | `/api/v1/clientes` | POST/GET/PUT | JWT (admin) |
+| **Veículos** | `/api/v1/veiculos` | POST/GET/PUT | JWT (admin) |
+| **Serviços** | `/api/v1/servicos` | POST/GET/PUT | JWT (admin) |
+| **Peças** | `/api/v1/pecas` | POST/GET/PUT | JWT (admin) |
+| **Estoque** | `/api/v1/estoque` | POST/GET | JWT (admin) |
+| **NF Fornecedor** | `/api/v1/notas-fiscais-fornecedor` | POST/GET | JWT (admin) |
+| **Abrir OS (unificada)** | `/api/v1/ordens-servico` | POST | JWT (admin) |
+| **Listar OS ativas** | `/api/v1/ordens-servico/ativas` | GET | JWT (admin) |
+| **Contas a pagar** | `/api/v1/contas-a-pagar` | GET | JWT (admin) |
+| **Contas a receber** | `/api/v1/contas-a-receber` | GET | JWT (admin) |
+| **Relatórios** | `/api/v1/relatorios/tempo-medio-por-os` | GET | JWT (admin) |
+| **Adicionar serviço à OS** | `/ordens-servico/{id}/servicos` | POST | JWT (técnico) |
+| **Adicionar peça à OS** | `/ordens-servico/{id}/pecas` | POST | JWT (técnico) |
+| **Enviar para aprovação** | `/ordens-servico/{id}/enviar-para-aprovacao` | PATCH | JWT (técnico) |
+| **Concluir reparo** | `/ordens-servico/{id}/concluir-reparo` | PATCH | JWT (técnico) |
+| **Entregar veículo** | `/ordens-servico/{id}/entregar` | PATCH | JWT (técnico) |
+| **Aprovar orçamento** | `/ordens-servico/{id}/aprovar` | PATCH | Pública |
+| **Rejeitar e refazer** | `/ordens-servico/{id}/rejeitar-refazer` | PATCH | Pública |
+| **Rejeitar e cancelar** | `/ordens-servico/{id}/rejeitar-cancelar` | PATCH | Pública |
+| **Confirmar pagamento** | `/ordens-servico/{id}/confirmar-pagamento` | PATCH | Pública |
+| **Consultar status (público)** | `/consulta/ordens-servico/{numeroOs}/status` | GET | Pública |
+
+---
+
+## Fluxo da Ordem de Serviço
+
+A OS segue uma máquina de estados controlada pelo domínio:
 
 ```
-GET /consulta/ordens-servico/{numeroOs}/status
+RECEBIDA → EM_DIAGNOSTICO → AGUARDANDO_APROVACAO → EM_EXECUCAO → AGUARDANDO_PAGAMENTO → PAGA → ENTREGUE
+                  ↑                    |
+                  |         rejeitarRefazer()
+                  └────────────────────┘
+                                       |
+                            rejeitarCancelar() → CANCELADA → ENTREGUE
 ```
 
-- **Sem autenticação.**
-- **Input (path param)**: `numeroOs` no formato `OS-MMAAAA-NNNNNN` (ex.: `OS-042026-000001`).
-- **200 OK**:
-  ```json
-  {
-    "numeroOs": "OS-042026-000001",
-    "status": "EM_EXECUCAO",
-    "statusDescricao": "Em execução"
-  }
-  ```
-- **404 Not Found** se a OS não existir (código `OS_NAO_ENCONTRADA`).
+**Passo a passo:**
 
-## Token JWT com validade configurável
+1. **Abrir OS** (`POST /api/v1/ordens-servico`) → cria com status `RECEBIDA` ou `EM_DIAGNOSTICO` (se já houver itens)
+2. **Adicionar serviços/peças** → transita para `EM_DIAGNOSTICO`. Peças consomem estoque imediatamente
+3. **Enviar para aprovação** → `AGUARDANDO_APROVACAO`
+4. **Cliente aprova** → `EM_EXECUCAO` (grava `inicio_execucao`)
+5. **Concluir reparo** → `AGUARDANDO_PAGAMENTO` (grava `fim_execucao`)
+6. **Confirmar pagamento** → `PAGA` (gera lançamento financeiro)
+7. **Entregar veículo** → `ENTREGUE`
 
-O endpoint `POST /auth/login` aceita um campo **opcional** `validadeMinutos` no corpo da requisição:
+**Caminhos alternativos:**
+- **Rejeitar e refazer**: cancela o orçamento atual, abre um novo, estorna peças → volta para `EM_DIAGNOSTICO`
+- **Rejeitar e cancelar**: cancela o orçamento, estorna peças → `CANCELADA` → pode entregar o veículo
 
-```json
-{
-  "email": "admin@oficina.local",
-  "senha": "admin123",
-  "validadeMinutos": 120
-}
+---
+
+## Estrutura do Projeto
+
+```
+src/main/java/br/com/oficina/
+├── OficinaApplication.java            # Ponto de entrada
+│
+├── config/                            # Configurações Spring
+│   ├── SecurityConfig.java            #   Spring Security + filtros
+│   ├── JwtProperties.java             #   Propriedades JWT (secret, issuer, TTL)
+│   ├── AdminBootstrap.java            #   Criação do admin no primeiro boot
+│   ├── OpenApiConfig.java             #   Swagger/OpenAPI
+│   └── SwaggerOrderConfig.java        #   Ordenação customizada no Swagger UI
+│
+├── domain/                            # CAMADA DE DOMÍNIO (pura)
+│   ├── model/                         #   Entidades e Value Objects
+│   │   ├── OrdemServico.java          #     Raiz de agregado (ciclo da OS)
+│   │   ├── ItemOrcamento.java         #     Itens do orçamento
+│   │   ├── Cliente.java, Veiculo.java #     Entidades de cadastro
+│   │   ├── Dinheiro.java              #     Value Object monetário
+│   │   ├── Documento.java             #     Value Object CPF/CNPJ
+│   │   ├── NumeroOS.java              #     Value Object formato OS-MMAAAA-NNNNNN
+│   │   ├── Placa.java                 #     Value Object placa veicular
+│   │   └── ...                        #     EstoquePeca, Servico, Peca, etc.
+│   ├── enums/                         #   StatusOrdemServico, TipoItem, etc.
+│   └── exception/                     #   BusinessException
+│
+├── usecase/                           # CAMADA DE CASOS DE USO
+│   ├── OrdemServicoServiceImpl.java   #   Lógica de aplicação da OS
+│   ├── ClienteServiceImpl.java        #   CRUD de clientes
+│   ├── EstoqueServiceImpl.java        #   Gestão de estoque
+│   ├── ...                            #   Demais services
+│   └── gateway/                       #   Interfaces (contratos de saída)
+│       ├── ClienteRepository.java     #     Contrato para persistência de clientes
+│       ├── NotificacaoGateway.java    #     Contrato para notificações
+│       ├── TokenGateway.java          #     Contrato para geração de tokens
+│       ├── RelatorioGateway.java      #     Contrato para relatórios
+│       └── ...                        #     Demais gateways
+│
+├── infrastructure/                    # CAMADA DE INFRAESTRUTURA
+│   ├── controller/                    #   Controllers REST (4 controllers)
+│   │   ├── AuthController.java
+│   │   ├── AdministrativoOficinaController.java
+│   │   ├── TecnicoOficinaController.java
+│   │   └── ClienteOficinaController.java
+│   ├── persistence/                   #   JPA Entities + Repository implementations
+│   │   ├── *JpaEntity.java            #     Entidades JPA (mapeamento ORM)
+│   │   ├── Jpa*Repository.java        #     Implementações dos gateways
+│   │   └── SpringData*Repository.java #     Interfaces Spring Data
+│   ├── security/                      #   JWT (geração e validação de tokens)
+│   ├── notification/                  #   LogNotificacaoGateway (notificação fictícia)
+│   ├── dto/                           #   Objetos de transporte (request/response)
+│   └── exception/                     #   GlobalExceptionHandler, ApiError
+│
+src/test/java/br/com/oficina/
+├── architecture/                      # Testes ArchUnit (4 regras)
+├── domain/model/                      # Testes unitários do domínio
+├── domain/exception/                  # Testes de exceções
+└── integration/                       # Testes E2E (Testcontainers + RestAssured)
 ```
 
-- **Opcional**. Se ausente ou `null`, usa o default (`JWT_EXPIRATION_MINUTES`, padrão 60 min).
-- **Faixa aceita**: 1 a 1440 minutos (24 horas). Valores fora da faixa retornam HTTP 400.
-- O token devolvido vem com o `exp` (expiration claim) alinhado ao valor informado.
+---
 
-## Cálculo de tempo médio por execução de OS
+## Testes e Cobertura
 
-Endpoint: `GET /api/v1/relatorios/tempo-medio-por-os`.
-
-### Regra de preenchimento dos timestamps
-
-Duas colunas na tabela `ordens_servico` rastreiam o tempo efetivo de execução:
-
-- `inicio_execucao` (`TIMESTAMPTZ NULL`) — preenchido na **primeira transição** `AGUARDANDO_APROVACAO → EM_EXECUCAO` (quando o cliente aprova o 1º orçamento). Nunca é sobrescrito em aprovações subsequentes.
-- `fim_execucao` (`TIMESTAMPTZ NULL`) — preenchido na **primeira transição** `EM_EXECUCAO → AGUARDANDO_PAGAMENTO` (conclusão do reparo). Nunca é sobrescrito.
-
-### Fórmula
-
-Considera apenas as OS com **ambos** `inicio_execucao` e `fim_execucao` preenchidos.
-
-- **Duração de cada OS** (em horas decimais):
-  ```sql
-  duracaoHoras = EXTRACT(EPOCH FROM (fim_execucao - inicio_execucao)) / 3600.0
-  ```
-- **Média geral**: `AVG(duracaoHoras)` sobre o conjunto de OS encerradas.
-
-Sem OS encerradas, a média retorna `0.0` e a lista vem vazia. OS antigas (anteriores à migration) ficam com `NULL` nos timestamps e não entram no cálculo.
-
-Exemplo de payload:
-```json
-{
-  "tempoMedioHoras": 2.75,
-  "totalOrdens": 2,
-  "ordens": [
-    {
-      "numeroOs": "OS-052026-000001",
-      "inicioExecucao": "2026-05-11T09:00:00Z",
-      "fimExecucao": "2026-05-11T11:30:00Z",
-      "duracaoHoras": 2.5
-    },
-    {
-      "numeroOs": "OS-052026-000002",
-      "inicioExecucao": "2026-05-12T13:00:00Z",
-      "fimExecucao": "2026-05-12T16:00:00Z",
-      "duracaoHoras": 3.0
-    }
-  ]
-}
-```
-
-## Testes e cobertura ≥ 80%
+### Executar todos os testes
 
 ```bash
 ./mvnw clean verify
 ```
 
-Relatório JaCoCo em `target/site/jacoco/index.html` (HTML) e `target/site/jacoco/jacoco.xml` (consumido pelo SonarQube).
+**105 testes** no total:
+- **97 testes unitários** do domínio (sem Spring context)
+- **4 testes ArchUnit** (validação de regras arquiteturais)
+- **4 testes de integração E2E** (Testcontainers + RestAssured com PostgreSQL 16)
 
-### Domínios críticos cobertos ≥ 80%
+### Cobertura (JaCoCo)
 
-O `jacoco-maven-plugin` está configurado com gate **obrigatório** de 80% de **line + branch coverage** sobre o pacote de domínio crítico `br.com.oficina.domain.model`. O build falha se a cobertura cair.
+O build exige **≥ 80% de cobertura** (line + branch) no pacote `br.com.oficina.domain.model`. O build **falha** se a cobertura cair abaixo desse limiar.
 
-| Classe de domínio | Tipo | Testada em |
+Relatório HTML: `target/site/jacoco/index.html`
+
+### Classes de domínio cobertas
+
+| Classe | Tipo | Classe de Teste |
 |---|---|---|
 | `Dinheiro` | Value Object | `DinheiroTest` |
 | `Documento` | Value Object (CPF/CNPJ) | `DocumentoTest` |
@@ -293,110 +440,46 @@ O `jacoco-maven-plugin` está configurado com gate **obrigatório** de 80% de **
 | `Orcamento` | Agregado | `OrcamentoTest` |
 | `OrdemServico` | Agregado raiz | `OrdemServicoTest` |
 
-## SonarQube (Análise estática de segurança: SAST — Static Application Security Testing)
+---
 
-Análise de qualidade do código via **SonarQube Community Edition** localmente:
+## Validação de Arquitetura (ArchUnit)
 
-### 1. Subir o SonarQube
+4 testes automatizados garantem a integridade da Clean Architecture:
 
-```powershell
-docker run -d --name sonarqube -p 9000:9000 sonarqube:community
-```
+1. **Domínio puro** — `domain.model` não pode depender de Spring, JPA ou Servlet
+2. **Domínio isolado** — `domain` não depende de `usecase` nem `infrastructure`
+3. **Usecase isolado** — `usecase` não pode depender de `infrastructure`
+4. **Camadas unidirecionais** — `infrastructure` → `usecase` → `domain` (nunca o contrário)
 
-Aguarde ~1 minuto e acesse <http://localhost:9000>.
+Localização: `src/test/java/br/com/oficina/architecture/ArchitectureTest.java`
 
-Login inicial: **`admin`** / **`admin`** (será pedido para trocar a senha).
+---
 
-### 2. Criar projeto + token (UI)
+## CI/CD (GitHub Actions)
 
-1. **Projects → Create Project → Local**
-2. **Project key**: `oficina-backend`
-3. **Project Display Name**: `Oficina Backend`
-4. Avança até a tela de geração de token → **Project Analysis Token**
-5. Copia o token gerado (formato `sqp_...`)
+O pipeline (`ci.yml`) executa 3 jobs a cada push/PR:
 
-> 🔒 **TOKEN PESSOAL**: o token gerado é **único pra cada execução do SonarQube de cada pessoa**. Quem rodar precisa gerar o seu próprio — não reutiliza tokens de outras instalações.
+1. **Build, Test & Coverage** — `./mvnw -B verify` (compilação + testes + JaCoCo)
+2. **SBOM** — gera relatório CycloneDX de dependências
+3. **Trivy Scan** — análise de vulnerabilidades (HIGH/CRITICAL)
 
-### 3. Rodar a análise
+---
 
-```powershell
-# Windows (PowerShell)
-$env:SONAR_HOST_URL = "http://localhost:9000"
-$env:SONAR_TOKEN = "<COLE_AQUI_O_TOKEN_sqp_GERADO_NO_PASSO_2>"
-./mvnw clean verify sonar:sonar
-```
+## Banco de Dados
 
-> ⚠️ **PowerShell**: **NUNCA** use `\` para quebrar linhas (isso é Bash). Use os env vars acima ou backtick `` ` `` com aspas em cada `-D...`.
+- **PostgreSQL 16** com **Flyway** para migrações versionadas
+- Hibernate em modo `validate` (Flyway é o dono do schema)
+- 2 migrações: `V1__schema_inicial.sql` (schema completo) + `V2__ordens_servico_inicio_fim_execucao.sql` (timestamps de execução)
 
-### 4. Ver o resultado
+---
 
-Abra <http://localhost:9000/dashboard?id=oficina-backend>. O relatório traz:
+## Documentação Adicional
 
-- **Quality Gate**: PASSED / FAILED contra o perfil _Sonar way_.
-- **Coverage**: lê `target/site/jacoco/jacoco.xml` (configurado via `sonar.coverage.jacoco.xmlReportPaths`).
-- **Bugs / Vulnerabilities / Code Smells / Security Hotspots**.
-- **Duplications**.
+Toda a documentação do projeto está organizada em [`/docs`](./docs/README-DOCS.md), incluindo:
 
-### Propriedades do projeto (já configuradas no `pom.xml`)
-
-| Propriedade | Valor |
+| Tema | Local |
 |---|---|
-| `sonar.projectKey` | `oficina-backend` |
-| `sonar.projectName` | `Oficina Backend` |
-| `sonar.java.source` | `21` |
-| `sonar.coverage.jacoco.xmlReportPaths` | `target/site/jacoco/jacoco.xml` |
-| `sonar.exclusions` | `**/dto/**, **/mapper/**, **/config/**, **/infrastructure/**, OficinaApplication.java` |
-| `sonar.coverage.exclusions` | acima + `**/controller/**` |
-
-## Segurança e análise de vulnerabilidades - Análise de segurança das dependências do projeto: SCA — Software Composition Analysis
-
-> Bloco resumido — o detalhe completo está em `docs/dependency-track-readme.md` (uso recorrente) e `docs/dependency-track-do-primeira-utilizacao.md` (bootstrap, ~1h17 de mirror NVD na primeira vez).
-
-📖 **Veja**:
-- [`docs/dependency-track-readme.md`](docs/04-security/dependency-track-readme.md) — fluxo recorrente do Dependency-Track (após o bootstrap inicial)
-- [`docs/dependency-track-do-primeira-utilizacao.md`](docs/04-security/dependency-track-do-primeira-utilizacao.md) — bootstrap completo do Dependency-Track em PC novo (inclui mirror NVD de ~1h17min)
-
-## Estrutura de pacotes
-
-```
-src/
-├── main/
-│   ├── java/br/com/oficina/
-│   │   ├── OficinaApplication.java
-│   │   ├── config/         (SecurityConfig, JwtAuthenticationFilter, OpenApiConfig, AdminBootstrap)
-│   │   ├── controller/     (AuthController, Cliente/Veiculo/Servico/Peca/Estoque/NF/OS/Financeiro/Relatorio/Consulta)
-│   │   ├── service/        (interfaces) + service/impl/ (Implementações transacionais)
-│   │   ├── domain/
-│   │   │   ├── model/      (Cliente, Veiculo, Servico, Peca, OrdemServico, Orcamento, …)
-│   │   │   ├── enums/      (StatusOrdemServico, StatusOrcamentoItem, TipoItem, TipoLancamento, …)
-│   │   │   └── repository/ (Interfaces puras, sem Spring/JPA)
-│   │   ├── infrastructure/
-│   │   │   ├── repository/ (Entities JPA + implementações dos repositórios)
-│   │   │   └── security/   (JwtTokenService)
-│   │   ├── dto/
-│   │   │   ├── request/    (LoginRequest, AbrirOsRequest, …)
-│   │   │   └── response/   (OrdemServicoResponse, OrdemServicoStatusResponse, …)
-│   │   ├── mapper/
-│   │   └── exception/      (BusinessException, GlobalExceptionHandler, ApiError)
-│   └── resources/
-│       ├── application.yml
-│       ├── db/migration/V1__schema_inicial.sql
-│       └── logback-spring.xml
-└── test/
-    └── java/br/com/oficina/
-        ├── architecture/ArchitectureTest.java
-        ├── domain/model/…
-        └── exception/…
-```
-
-## 📚 Documentação
-
-Toda a documentação do projeto está organizada em [`/docs`](./docs/README-DOCS.md), incluindo análises de segurança, evidências de validação e documentação de negócio.
-
-| Quero…                                          | Vá para                                                                                                                              |
-|-------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------|
-| 🎯 **Apresentação** (Tech Challenge FIAP)       | [Roteiro da apresentação](./README-apresentacao-tech-challenge-fase1.md)                                                             |
-| 📖 **Documentações do projeto**                 | [Guia de documentações](./docs/README-DOCS.md) — DDD (Storytelling, Event Storming, Linguagem ubíqua), Decisões arquiteturais (ADR), API, Segurança e Evidências de validação |
-
----</content>
-<parameter name="filePath">C:\aula01\oficina-backend-fiap\README_alterado.md
+| DDD (Storytelling, Event Storming, Linguagem Ubíqua) | `docs/` |
+| Decisões arquiteturais (ADR) | `docs/` |
+| Segurança (Dependency-Track, Trivy) | `docs/04-security/` |
+| Apresentação Tech Challenge | `README-apresentacao-tech-challenge-fase1.md` |
