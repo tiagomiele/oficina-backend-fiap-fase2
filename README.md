@@ -10,7 +10,7 @@
 
 - [Sobre o Projeto](#sobre-o-projeto)
 - [Funcionalidades](#funcionalidades)
-- [Arquitetura — Clean Architecture](#arquitetura--clean-architecture)
+- [Arquitetura — Clean Architecture (4 Anéis)](#arquitetura--clean-architecture-4-anéis)
 - [Tecnologias](#tecnologias)
 - [Pré-requisitos](#pré-requisitos)
 - [Passo a Passo para Execução](#passo-a-passo-para-execução)
@@ -81,36 +81,41 @@ O projeto aplica **Domain-Driven Design (DDD)** com padrões táticos (agregados
 
 ---
 
-## Arquitetura — Clean Architecture
+## Arquitetura — Clean Architecture (4 Anéis)
 
-O projeto segue os princípios da **Clean Architecture (Uncle Bob)**, organizado em 3 camadas com dependências sempre apontando para dentro:
+O projeto segue os princípios da **Clean Architecture (Uncle Bob)**, organizado em **4 anéis** com dependências sempre apontando para dentro:
 
 ```
-┌──────────────────────────────────────────────────┐
-│                INFRASTRUCTURE                     │
-│  Controllers · JPA · Security · Notification      │
-│  (frameworks, drivers, adaptadores externos)      │
-│                                                   │
-│  ┌──────────────────────────────────────────┐     │
-│  │              USECASE                      │     │
-│  │  Services · Gateways (interfaces)         │     │
-│  │  (casos de uso, regras de aplicação)      │     │
-│  │                                           │     │
-│  │  ┌──────────────────────────────────┐     │     │
-│  │  │            DOMAIN                 │     │     │
-│  │  │  Entities · Value Objects · Enums │     │     │
-│  │  │  (regras de negócio puras)        │     │     │
-│  │  └──────────────────────────────────┘     │     │
-│  └──────────────────────────────────────────┘     │
-└──────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│  4. INFRASTRUCTURE  (anel externo — composition root)           │
+│  SecurityConfig, AdminBootstrap, OpenApiConfig                  │
+│                                                                 │
+│  ┌───────────────────────────────────────────────────────────┐  │
+│  │  3. ADAPTER  (interface adapters)                         │  │
+│  │  Controllers, DTOs, JPA Repos, JWT, Notification          │  │
+│  │                                                           │  │
+│  │  ┌─────────────────────────────────────────────────────┐  │  │
+│  │  │  2. USECASE  (application business rules)           │  │  │
+│  │  │  Services, Gateway interfaces                       │  │  │
+│  │  │                                                     │  │  │
+│  │  │  ┌───────────────────────────────────────────────┐  │  │  │
+│  │  │  │  1. DOMAIN  (enterprise business rules)       │  │  │  │
+│  │  │  │  Entities, Value Objects, Enums, Exceptions   │  │  │  │
+│  │  │  └───────────────────────────────────────────────┘  │  │  │
+│  │  └─────────────────────────────────────────────────────┘  │  │
+│  └───────────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 **Regras de dependência:**
 - `domain` → **puro**: sem Spring, sem JPA, sem Servlet — apenas Java puro
-- `usecase` → depende de `domain`; define interfaces `*Gateway` e `*Repository` que a infraestrutura implementa
-- `infrastructure` → implementa gateways e repositórios; depende de `usecase` e `domain`
+- `usecase` → depende de `domain`; define interfaces `*Gateway` e `*Repository`
+- `adapter` → implementa gateways e repositórios; depende de `usecase` e `domain`
+- `infrastructure` → composition root (configurações Spring); depende de `adapter`, `usecase` e `domain`
 
-Essas regras são **validadas automaticamente** por 4 testes ArchUnit a cada build.
+Essas regras são **validadas automaticamente** por 5 testes ArchUnit a cada build.
+
+> Para um exemplo detalhado com teste de mesa percorrendo todos os 4 anéis, veja [`README-TESTE-DE-MESA.md`](./README-TESTE-DE-MESA.md).
 
 ---
 
@@ -343,60 +348,63 @@ RECEBIDA → EM_DIAGNOSTICO → AGUARDANDO_APROVACAO → EM_EXECUCAO → AGUARDA
 
 ```
 src/main/java/br/com/oficina/
-├── OficinaApplication.java            # Ponto de entrada
+├── OficinaApplication.java                # Ponto de entrada
 │
-├── config/                            # Configurações Spring
-│   ├── SecurityConfig.java            #   Spring Security + filtros
-│   ├── JwtProperties.java             #   Propriedades JWT (secret, issuer, TTL)
-│   ├── AdminBootstrap.java            #   Criação do admin no primeiro boot
-│   ├── OpenApiConfig.java             #   Swagger/OpenAPI
-│   └── SwaggerOrderConfig.java        #   Ordenação customizada no Swagger UI
+├── domain/                                # ANEL 1 — DOMAIN (regras de negócio puras)
+│   ├── model/                             #   Entidades e Value Objects
+│   │   ├── OrdemServico.java              #     Raiz de agregado (ciclo da OS)
+│   │   ├── ItemOrcamento.java             #     Itens do orçamento
+│   │   ├── Cliente.java, Veiculo.java     #     Entidades de cadastro
+│   │   ├── Dinheiro.java                  #     Value Object monetário
+│   │   ├── Documento.java                 #     Value Object CPF/CNPJ
+│   │   ├── NumeroOS.java                  #     Value Object formato OS-MMAAAA-NNNNNN
+│   │   ├── Placa.java                     #     Value Object placa veicular
+│   │   └── ...                            #     EstoquePeca, Servico, Peca, etc.
+│   ├── enums/                             #   StatusOrdemServico, TipoItem, etc.
+│   └── exception/                         #   BusinessException
 │
-├── domain/                            # CAMADA DE DOMÍNIO (pura)
-│   ├── model/                         #   Entidades e Value Objects
-│   │   ├── OrdemServico.java          #     Raiz de agregado (ciclo da OS)
-│   │   ├── ItemOrcamento.java         #     Itens do orçamento
-│   │   ├── Cliente.java, Veiculo.java #     Entidades de cadastro
-│   │   ├── Dinheiro.java              #     Value Object monetário
-│   │   ├── Documento.java             #     Value Object CPF/CNPJ
-│   │   ├── NumeroOS.java              #     Value Object formato OS-MMAAAA-NNNNNN
-│   │   ├── Placa.java                 #     Value Object placa veicular
-│   │   └── ...                        #     EstoquePeca, Servico, Peca, etc.
-│   ├── enums/                         #   StatusOrdemServico, TipoItem, etc.
-│   └── exception/                     #   BusinessException
+├── usecase/                               # ANEL 2 — USECASE (regras de aplicação)
+│   ├── OrdemServicoServiceImpl.java       #   Lógica de aplicação da OS
+│   ├── ClienteServiceImpl.java            #   CRUD de clientes
+│   ├── EstoqueServiceImpl.java            #   Gestão de estoque
+│   ├── ...                                #   Demais services
+│   └── gateway/                           #   Interfaces (contratos de saída)
+│       ├── ClienteRepository.java         #     Contrato para persistência de clientes
+│       ├── NotificacaoGateway.java        #     Contrato para notificações
+│       ├── TokenGateway.java              #     Contrato para geração de tokens
+│       ├── RelatorioGateway.java          #     Contrato para relatórios
+│       └── ...                            #     Demais gateways
 │
-├── usecase/                           # CAMADA DE CASOS DE USO
-│   ├── OrdemServicoServiceImpl.java   #   Lógica de aplicação da OS
-│   ├── ClienteServiceImpl.java        #   CRUD de clientes
-│   ├── EstoqueServiceImpl.java        #   Gestão de estoque
-│   ├── ...                            #   Demais services
-│   └── gateway/                       #   Interfaces (contratos de saída)
-│       ├── ClienteRepository.java     #     Contrato para persistência de clientes
-│       ├── NotificacaoGateway.java    #     Contrato para notificações
-│       ├── TokenGateway.java          #     Contrato para geração de tokens
-│       ├── RelatorioGateway.java      #     Contrato para relatórios
-│       └── ...                        #     Demais gateways
-│
-├── infrastructure/                    # CAMADA DE INFRAESTRUTURA
-│   ├── controller/                    #   Controllers REST (4 controllers)
+├── adapter/                               # ANEL 3 — ADAPTER (interface adapters)
+│   ├── controller/                        #   Controllers REST (4 controllers)
 │   │   ├── AuthController.java
 │   │   ├── AdministrativoOficinaController.java
 │   │   ├── TecnicoOficinaController.java
 │   │   └── ClienteOficinaController.java
-│   ├── persistence/                   #   JPA Entities + Repository implementations
-│   │   ├── *JpaEntity.java            #     Entidades JPA (mapeamento ORM)
-│   │   ├── Jpa*Repository.java        #     Implementações dos gateways
-│   │   └── SpringData*Repository.java #     Interfaces Spring Data
-│   ├── security/                      #   JWT (geração e validação de tokens)
-│   ├── notification/                  #   LogNotificacaoGateway (notificação fictícia)
-│   ├── dto/                           #   Objetos de transporte (request/response)
-│   └── exception/                     #   GlobalExceptionHandler, ApiError
+│   ├── persistence/                       #   JPA Entities + Repository implementations
+│   │   ├── *JpaEntity.java                #     Entidades JPA (mapeamento ORM)
+│   │   ├── Jpa*Repository.java            #     Implementações dos gateways
+│   │   └── SpringData*Repository.java     #     Interfaces Spring Data
+│   ├── security/                          #   JWT (geração e validação de tokens)
+│   │   ├── JwtTokenService.java           #     Implementa TokenGateway
+│   │   ├── JwtAuthenticationFilter.java   #     Filtro de autenticação
+│   │   └── JwtProperties.java             #     Propriedades JWT
+│   ├── notification/                      #   LogNotificacaoGateway (notificação fictícia)
+│   ├── dto/                               #   Objetos de transporte (response)
+│   └── exception/                         #   GlobalExceptionHandler, ApiError, RequestIdFilter
+│
+├── infrastructure/                        # ANEL 4 — INFRASTRUCTURE (composition root)
+│   └── config/                            #   Configurações Spring
+│       ├── SecurityConfig.java            #     Spring Security + filtros
+│       ├── AdminBootstrap.java            #     Criação do admin no primeiro boot
+│       ├── OpenApiConfig.java             #     Swagger/OpenAPI
+│       └── SwaggerOrderConfig.java        #     Ordenação customizada no Swagger UI
 │
 src/test/java/br/com/oficina/
-├── architecture/                      # Testes ArchUnit (4 regras)
-├── domain/model/                      # Testes unitários do domínio
-├── domain/exception/                  # Testes de exceções
-└── integration/                       # Testes E2E (Testcontainers + RestAssured)
+├── architecture/                          # Testes ArchUnit (5 regras)
+├── domain/model/                          # Testes unitários do domínio
+├── domain/exception/                      # Testes de exceções
+└── integration/                           # Testes E2E (Testcontainers + RestAssured)
 ```
 
 ---
@@ -409,9 +417,9 @@ src/test/java/br/com/oficina/
 ./mvnw clean verify
 ```
 
-**105 testes** no total:
+**106 testes** no total:
 - **97 testes unitários** do domínio (sem Spring context)
-- **4 testes ArchUnit** (validação de regras arquiteturais)
+- **5 testes ArchUnit** (validação de regras arquiteturais — 4 anéis)
 - **4 testes de integração E2E** (Testcontainers + RestAssured com PostgreSQL 16)
 
 ### Cobertura (JaCoCo)
@@ -444,12 +452,13 @@ Relatório HTML: `target/site/jacoco/index.html`
 
 ## Validação de Arquitetura (ArchUnit)
 
-4 testes automatizados garantem a integridade da Clean Architecture:
+5 testes automatizados garantem a integridade da Clean Architecture (4 anéis):
 
-1. **Domínio puro** — `domain.model` não pode depender de Spring, JPA ou Servlet
-2. **Domínio isolado** — `domain` não depende de `usecase` nem `infrastructure`
-3. **Usecase isolado** — `usecase` não pode depender de `infrastructure`
-4. **Camadas unidirecionais** — `infrastructure` → `usecase` → `domain` (nunca o contrário)
+1. **4 camadas respeitam dependências** — `infrastructure` → `adapter` → `usecase` → `domain` (nunca o contrário)
+2. **Domínio puro (sem Spring)** — `domain` não pode depender de Spring, JPA ou Servlet
+3. **Domínio puro (sem JPA)** — `domain` não importa `jakarta.persistence` nem `org.hibernate`
+4. **Usecase isolado** — `usecase` não pode depender de `adapter` nem `infrastructure`
+5. **Adapter isolado** — `adapter` não pode depender de `infrastructure`
 
 Localização: `src/test/java/br/com/oficina/architecture/ArchitectureTest.java`
 
