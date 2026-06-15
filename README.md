@@ -9,18 +9,24 @@
 ## Sumário
 
 - [Sobre o Projeto](#sobre-o-projeto)
+- [Objetivos da Fase 2](#objetivos-da-fase-2)
 - [Funcionalidades](#funcionalidades)
 - [Arquitetura — Clean Architecture (4 Anéis)](#arquitetura--clean-architecture-4-anéis)
+- [Arquitetura de Infraestrutura (AWS)](#arquitetura-de-infraestrutura-aws)
+- [Fluxo de Deploy (CI/CD)](#fluxo-de-deploy-cicd)
 - [Tecnologias](#tecnologias)
 - [Pré-requisitos](#pré-requisitos)
-- [Passo a Passo para Execução](#passo-a-passo-para-execução)
+- [Execução Local (Docker Compose)](#execução-local-docker-compose)
+- [Deploy em Kubernetes](#deploy-em-kubernetes)
+- [Provisionamento da Infraestrutura (Terraform)](#provisionamento-da-infraestrutura-terraform)
 - [Variáveis de Ambiente](#variáveis-de-ambiente)
-- [Documentação da API (Swagger)](#documentação-da-api-swagger)
+- [Documentação e Collection das APIs](#documentação-e-collection-das-apis)
 - [Endpoints Principais](#endpoints-principais)
 - [Fluxo da Ordem de Serviço](#fluxo-da-ordem-de-serviço)
 - [Estrutura do Projeto](#estrutura-do-projeto)
 - [Testes e Cobertura](#testes-e-cobertura)
 - [Validação de Arquitetura (ArchUnit)](#validação-de-arquitetura-archunit)
+- [Vídeo Demonstrativo](#vídeo-demonstrativo)
 
 ---
 
@@ -28,7 +34,7 @@
 
 Sistema que permite uma oficina mecânica controlar o **ciclo de vida completo de uma Ordem de Serviço (OS)**: desde o recebimento do veículo até o pagamento e entrega, passando por diagnóstico, orçamento, aprovação do cliente e execução do reparo.
 
-O projeto aplica **Domain-Driven Design (DDD)** com padrões táticos (agregados, value objects, entidades ricas) e está estruturado em **Clean Architecture** com 3 camadas isoladas.
+O projeto aplica **Domain-Driven Design (DDD)** com padrões táticos (agregados, value objects, entidades ricas) e está estruturado em **Clean Architecture** com 4 anéis isolados (domain → usecase → adapter → infrastructure).
 
 ### O que o sistema oferece
 
@@ -41,6 +47,19 @@ O projeto aplica **Domain-Driven Design (DDD)** com padrões táticos (agregados
 - **Relatórios** de tempo médio de execução por OS
 - **Consulta pública** de status da OS pelo cliente (sem autenticação)
 - **Notificação fictícia** ao cliente nas transições de status (log via SLF4J)
+
+---
+
+## Objetivos da Fase 2
+
+A Fase 2 evolui a aplicação da Fase 1 para garantir **qualidade, resiliência e escalabilidade**, incorporando práticas modernas de infraestrutura e automação:
+
+| Objetivo | Como foi atendido |
+|---|---|
+| **Reduzir riscos operacionais com infraestrutura escalável** | Cluster Kubernetes (EKS) com múltiplas réplicas + HPA (auto-scaling 2–5 pods por CPU) |
+| **Automatizar o provisionamento e o deploy** | Terraform (IaC) para provisionar VPC, EKS e RDS + pipeline CI/CD (GitHub Actions) |
+| **Melhorar qualidade e organização do código** | Refatoração para Clean Architecture (4 anéis), Clean Code e 106 testes automatizados |
+| **Suportar grandes volumes em horários de pico** | Escalabilidade dinâmica via HPA + rolling updates sem downtime |
 
 ---
 
@@ -119,6 +138,83 @@ Essas regras são **validadas automaticamente** por 5 testes ArchUnit a cada bui
 
 ---
 
+## Arquitetura de Infraestrutura (AWS)
+
+A infraestrutura é provisionada via Terraform (`/infra`) na AWS, com a aplicação orquestrada por Kubernetes (EKS) e banco gerenciado (RDS):
+
+```
+┌──────────────────────────── AWS Cloud ─────────────────────────────┐
+│                                                                     │
+│  ┌──────────────────── VPC 10.0.0.0/16 ───────────────────────┐    │
+│  │                                                            │    │
+│  │   Subnets Públicas (2 AZs)        Subnets Privadas (2 AZs) │    │
+│  │   ┌──────────────────┐            ┌──────────────────────┐ │    │
+│  │   │ Internet Gateway │            │  EKS Cluster (1.29)  │ │    │
+│  │   │ NAT Gateway      │──────────▶ │  Node Group          │ │    │
+│  │   │ LoadBalancer(ELB)│            │  (t3.medium, 2–5)    │ │    │
+│  │   └──────────────────┘            │  ┌────────────────┐  │ │    │
+│  │            ▲                      │  │ oficina-app x2+ │  │ │    │
+│  │            │                      │  │ (HPA 2–5 pods)  │  │ │    │
+│  │   tráfego externo                 │  └───────┬────────┘  │ │    │
+│  │   (porta 80)                      │          │           │ │    │
+│  │                                   │  ┌───────▼────────┐  │ │    │
+│  │                                   │  │ RDS PostgreSQL │  │ │    │
+│  │                                   │  │ 16 (db.t3.micro)│ │ │    │
+│  │                                   │  └────────────────┘  │ │    │
+│  │                                   └──────────────────────┘ │    │
+│  └────────────────────────────────────────────────────────────┘    │
+│                                                                     │
+│   ECR (registry da imagem Docker)   ◀── push da imagem pelo CI/CD   │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+**Componentes provisionados** (detalhes em [`infra/README-infra.md`](./infra/README-infra.md)):
+
+| Componente | Serviço AWS | Função |
+|---|---|---|
+| Rede | VPC + subnets + IGW + NAT | Isolamento e conectividade |
+| Orquestração | EKS (Kubernetes 1.29) | Executa os containers da aplicação |
+| Compute | EC2 (t3.medium, 2–5 nodes) | Worker nodes do cluster |
+| Banco de dados | RDS PostgreSQL 16 | Persistência gerenciada |
+| Registry | ECR | Armazena a imagem Docker |
+
+---
+
+## Fluxo de Deploy (CI/CD)
+
+O deploy é automatizado por **GitHub Actions** em dois workflows que se complementam (detalhes em [`README-BLOCO-G-CICD.md`](./README-BLOCO-G-CICD.md)):
+
+```
+  Desenvolvedor faz push / merge na main
+               │
+               ▼
+  ┌─────────────────────────────┐
+  │  CI  (.github/workflows/ci.yml)
+  │  1. Build (mvnw verify)     │
+  │  2. 106 testes + JaCoCo     │
+  │  3. SBOM (CycloneDX)        │
+  │  4. Trivy (vulnerabilidades)│
+  └──────────────┬──────────────┘
+                 │ sucesso
+                 ▼
+  ┌─────────────────────────────┐
+  │  CD  (.github/workflows/cd.yml)
+  │  G1. Docker build + push GHCR│
+  │  G2/G3. kubectl apply -f k8s/│
+  │     • namespace             │
+  │     • configmap + secret    │
+  │     • postgres (banco)      │
+  │     • app + service         │
+  │     • hpa (auto-scaling)    │
+  │     • rollout status        │
+  └──────────────┬──────────────┘
+                 ▼
+     Cluster Kubernetes atualizado
+        (app + banco no ar)
+```
+
+---
+
 ## Tecnologias
 
 | Camada | Tecnologia |
@@ -147,7 +243,7 @@ Essas regras são **validadas automaticamente** por 5 testes ArchUnit a cada bui
 
 ---
 
-## Passo a Passo para Execução
+## Execução Local (Docker Compose)
 
 ### 1. Clonar o repositório
 
@@ -256,6 +352,94 @@ docker compose down -v
 
 ---
 
+## Deploy em Kubernetes
+
+Os manifestos estão em [`/k8s`](./k8s) e cobrem Deployments, Services, ConfigMap, Secret e HPA. Há duas formas de validar: **local (Minikube)** ou **cloud (EKS)**.
+
+### Opção A — Local com Minikube
+
+```bash
+# 1. Subir o cluster local
+minikube start --driver=docker --cpus=2 --memory=4096
+
+# 2. Apontar o Docker para o Minikube e buildar a imagem
+eval $(minikube docker-env)
+docker build -t oficina-backend:latest .
+
+# 3. Aplicar todos os manifestos
+kubectl apply -f k8s/
+
+# 4. Aguardar os pods ficarem prontos
+kubectl get pods -n oficina -w
+
+# 5. Acessar a aplicação
+kubectl port-forward svc/oficina-app 8080:80 -n oficina
+# Abra: http://localhost:8080/swagger-ui.html
+```
+
+### Opção B — Cloud (AWS EKS)
+
+Após provisionar a infraestrutura (ver seção seguinte) e configurar o `kubectl`:
+
+```bash
+kubectl apply -f k8s/
+kubectl get svc oficina-app -n oficina   # pega a URL pública (LoadBalancer/ELB)
+```
+
+### Recursos aplicados
+
+| Recurso | Arquivo | Função |
+|---|---|---|
+| Namespace | `namespace.yaml` | Isola os recursos no namespace `oficina` |
+| ConfigMap | `configmap.yaml` | Variáveis não-sensíveis (URL do banco, porta) |
+| Secret | `secret.yaml` | Variáveis sensíveis (senha do banco, JWT) |
+| Deployment (banco) | `postgres-deployment.yaml` + `postgres-pvc.yaml` | PostgreSQL com volume persistente |
+| Service (banco) | `postgres-service.yaml` | ClusterIP 5432 (acesso interno) |
+| Deployment (app) | `app-deployment.yaml` | 2 réplicas, probes, rolling update |
+| Service (app) | `app-service.yaml` | LoadBalancer 80 → 8080 (acesso externo) |
+| HPA | `hpa.yaml` | Auto-scaling 2–5 pods quando CPU > 70% |
+
+> Guia detalhado de validação (passo a passo + troubleshooting): [`README-GUIA-VALIDACAO-K8S-TERRAFORM.md`](./README-GUIA-VALIDACAO-K8S-TERRAFORM.md).
+
+---
+
+## Provisionamento da Infraestrutura (Terraform)
+
+Os scripts estão em [`/infra`](./infra) e provisionam toda a infraestrutura AWS (VPC, EKS e RDS).
+
+### Pré-requisitos
+
+- **AWS CLI** configurado (`aws configure`)
+- **Terraform** >= 1.5
+- **kubectl** >= 1.29
+
+### Passo a passo
+
+```bash
+cd infra
+
+# 1. Copiar e ajustar as variáveis (região, senha do banco, etc.)
+cp terraform.tfvars.example terraform.tfvars
+
+# 2. Inicializar o Terraform (baixa o provider AWS)
+terraform init
+
+# 3. Visualizar o que será criado
+terraform plan
+
+# 4. Provisionar a infraestrutura (~15-20 min)
+terraform apply
+
+# 5. Configurar o kubectl para o cluster criado (usar o output do apply)
+aws eks update-kubeconfig --region us-east-1 --name oficina-dev
+```
+
+Ao final, o Terraform exibe os outputs (nome/endpoint do cluster, endpoint do RDS e o comando do kubectl). A documentação completa dos recursos, custos estimados e instruções de destruição (`terraform destroy`) está em [`infra/README-infra.md`](./infra/README-infra.md).
+
+> Passo a passo completo de execução em todos os ambientes (local, Minikube e AWS): [`README-GUIA-EXECUCAO-COMPLETO.md`](./README-GUIA-EXECUCAO-COMPLETO.md).
+
+---
+
 ## Variáveis de Ambiente
 
 | Variável | Default | Descrição |
@@ -271,17 +455,29 @@ docker compose down -v
 
 ---
 
-## Documentação da API (Swagger)
+## Documentação e Collection das APIs
 
-Após subir a aplicação, a documentação interativa está disponível em:
+Após subir a aplicação, a documentação interativa (que serve como **collection completa das APIs**) está disponível em:
 
 - **Swagger UI**: http://localhost:8080/swagger-ui.html
-- **OpenAPI JSON**: http://localhost:8080/v3/api-docs
+- **OpenAPI JSON (spec/collection)**: http://localhost:8080/v3/api-docs
 
 Cada endpoint possui:
 - Descrição detalhada via `@Operation`
 - Schemas de request/response com exemplos preenchidos
 - Códigos de resposta documentados (200, 201, 204, 400, 401, 403, 404, 409, 422)
+
+### Exportar a collection
+
+A especificação OpenAPI pode ser exportada e importada em qualquer cliente (Postman, Insomnia, etc.):
+
+```bash
+# Baixar a spec OpenAPI (JSON) com a aplicação rodando
+curl http://localhost:8080/v3/api-docs -o oficina-openapi.json
+```
+
+- **Postman**: `Import` → selecione o arquivo `oficina-openapi.json` (o Postman gera a collection automaticamente).
+- **Insomnia**: `Import/Export` → `Import Data` → `From File`.
 
 ---
 
@@ -464,13 +660,28 @@ Localização: `src/test/java/br/com/oficina/architecture/ArchitectureTest.java`
 
 ---
 
+## Vídeo Demonstrativo
+
+Vídeo (até 15 min) demonstrando deploy da aplicação, execução do CI/CD, consumo das APIs e escalabilidade automática (HPA):
+
+- **Link**: _a publicar (YouTube/Vimeo)_
+
+---
+
 ## CI/CD (GitHub Actions)
 
-O pipeline (`ci.yml`) executa 3 jobs a cada push/PR:
+Dois workflows complementares automatizam build, testes e deploy:
 
+**CI (`ci.yml`)** — a cada push/PR:
 1. **Build, Test & Coverage** — `./mvnw -B verify` (compilação + testes + JaCoCo)
 2. **SBOM** — gera relatório CycloneDX de dependências
 3. **Trivy Scan** — análise de vulnerabilidades (HIGH/CRITICAL)
+
+**CD (`cd.yml`)** — no push à `main` (ou disparo manual):
+1. **Docker build & push** — constrói a imagem e publica no GHCR
+2. **Deploy no Kubernetes** — `kubectl apply -f k8s/` (banco + app + manifestos) e aguarda o rollout (requer o secret `KUBECONFIG`)
+
+> Detalhes, diagrama e guia de validação do CD em [`README-BLOCO-G-CICD.md`](./README-BLOCO-G-CICD.md).
 
 ---
 
