@@ -16,9 +16,10 @@ public class OpenApiConfig {
     return new OpenAPI()
         .info(
             new Info()
-                .title("Tech Challenge FIAP - Fase 1 - Oficina Mecânica — API v1")
+                .title("Tech Challenge FIAP - Fase 2 - Oficina Mecânica — API")
                 .description(
-                    "Backend MVP da oficina mecânica. Login padrão: admin@oficina.local / admin123")
+                    "Backend da oficina mecânica (Clean Architecture)."
+                        + " Login padrão: admin@oficina.local / admin123")
                 .version("2.0.0"))
         .addSecurityItem(new SecurityRequirement().addList("bearerAuth"))
         .components(

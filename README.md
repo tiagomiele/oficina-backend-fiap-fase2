@@ -299,9 +299,10 @@ curl -s -X POST http://localhost:8080/auth/login \
 Resposta:
 ```json
 {
-  "token": "eyJhbGciOiJIUzI1NiI...",
-  "tipo": "Bearer",
-  "expiraEm": "2026-05-24T19:24:00Z"
+  "accessToken": "eyJhbGciOiJIUzI1NiI...",
+  "expiresIn": 900,
+  "papel": "FUNCIONARIO_DA_OFICINA",
+  "email": "admin@oficina.local"
 }
 ```
 
@@ -311,10 +312,10 @@ Resposta:
 # Salvar o token em uma variável
 TOKEN=$(curl -s -X POST http://localhost:8080/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"email":"admin@oficina.local","senha":"admin123"}' | jq -r '.token')
+  -d '{"email":"admin@oficina.local","senha":"admin123"}' | jq -r '.accessToken')
 
 # Exemplo: listar clientes
-curl -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/v1/clientes
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8080/clientes
 ```
 
 ### 6. Acessar o Swagger UI
@@ -487,26 +488,26 @@ curl http://localhost:8080/v3/api-docs -o oficina-openapi.json
 |---|---|---|---|
 | **Login** | `/auth/login` | POST | Pública |
 | **Cadastro de usuário** | `/usuarios` | POST | JWT (admin) |
-| **Clientes** | `/api/v1/clientes` | POST/GET/PUT | JWT (admin) |
-| **Veículos** | `/api/v1/veiculos` | POST/GET/PUT | JWT (admin) |
-| **Serviços** | `/api/v1/servicos` | POST/GET/PUT | JWT (admin) |
-| **Peças** | `/api/v1/pecas` | POST/GET/PUT | JWT (admin) |
-| **Estoque** | `/api/v1/estoque` | POST/GET | JWT (admin) |
-| **NF Fornecedor** | `/api/v1/notas-fiscais-fornecedor` | POST/GET | JWT (admin) |
-| **Abrir OS (unificada)** | `/api/v1/ordens-servico` | POST | JWT (admin) |
-| **Listar OS ativas** | `/api/v1/ordens-servico/ativas` | GET | JWT (admin) |
-| **Contas a pagar** | `/api/v1/contas-a-pagar` | GET | JWT (admin) |
-| **Contas a receber** | `/api/v1/contas-a-receber` | GET | JWT (admin) |
-| **Relatórios** | `/api/v1/relatorios/tempo-medio-por-os` | GET | JWT (admin) |
-| **Adicionar serviço à OS** | `/ordens-servico/{id}/servicos` | POST | JWT (técnico) |
-| **Adicionar peça à OS** | `/ordens-servico/{id}/pecas` | POST | JWT (técnico) |
-| **Enviar para aprovação** | `/ordens-servico/{id}/enviar-para-aprovacao` | PATCH | JWT (técnico) |
-| **Concluir reparo** | `/ordens-servico/{id}/concluir-reparo` | PATCH | JWT (técnico) |
-| **Entregar veículo** | `/ordens-servico/{id}/entregar` | PATCH | JWT (técnico) |
-| **Aprovar orçamento** | `/ordens-servico/{id}/aprovar` | PATCH | Pública |
-| **Rejeitar e refazer** | `/ordens-servico/{id}/rejeitar-refazer` | PATCH | Pública |
-| **Rejeitar e cancelar** | `/ordens-servico/{id}/rejeitar-cancelar` | PATCH | Pública |
-| **Confirmar pagamento** | `/ordens-servico/{id}/confirmar-pagamento` | PATCH | Pública |
+| **Clientes** | `/clientes` | POST/GET/PUT | JWT (admin) |
+| **Veículos** | `/veiculos` | POST/GET/PUT | JWT (admin) |
+| **Serviços** | `/servicos` | POST/GET/PUT | JWT (admin) |
+| **Peças** | `/pecas` | POST/GET/PUT | JWT (admin) |
+| **Estoque** | `/estoque` | GET | JWT (admin) |
+| **NF Fornecedor** | `/notas-fiscais-fornecedor` | POST/GET | JWT (admin) |
+| **Abrir OS (unificada)** | `/ordens-servico` | POST | JWT (admin) |
+| **Listar OS ativas** | `/ordens-servico/ativas` | GET | JWT (técnico) |
+| **Contas a pagar** | `/contas-a-pagar` | GET | JWT (admin) |
+| **Contas a receber** | `/contas-a-receber` | GET | JWT (admin) |
+| **Relatórios** | `/relatorios/tempo-medio-por-os` | GET | JWT (admin) |
+| **Adicionar serviço à OS** | `/ordens-servico/{numeroOs}/servicos` | POST | JWT (técnico) |
+| **Adicionar peça à OS** | `/ordens-servico/{numeroOs}/pecas` | POST | JWT (técnico) |
+| **Enviar para aprovação** | `/ordens-servico/{numeroOs}/enviar-para-aprovacao` | POST | JWT (técnico) |
+| **Concluir reparo** | `/ordens-servico/{numeroOs}/concluir-reparo` | POST | JWT (técnico) |
+| **Entregar veículo** | `/ordens-servico/{numeroOs}/entregar` | POST | JWT (técnico) |
+| **Aprovar orçamento** | `/ordens-servico/{numeroOs}/aprovar` | POST | Pública |
+| **Rejeitar e refazer** | `/ordens-servico/{numeroOs}/rejeitar-refazer` | POST | Pública |
+| **Rejeitar e cancelar** | `/ordens-servico/{numeroOs}/rejeitar-cancelar` | POST | Pública |
+| **Confirmar pagamento** | `/ordens-servico/{numeroOs}/confirmar-pagamento` | POST | Pública |
 | **Consultar status (público)** | `/consulta/ordens-servico/{numeroOs}/status` | GET | Pública |
 
 ---
