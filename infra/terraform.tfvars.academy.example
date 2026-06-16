@@ -10,9 +10,10 @@
 aws_region  = "us-west-2"
 environment = "dev"
 
-# Reutiliza a LabRole do AWS Academy (confirme o ARN no seu lab com:
-#   aws iam get-role --role-name LabRole --query 'Role.Arn' --output text)
-lab_role_arn = "arn:aws:iam::163061816974:role/LabRole"
+# Reutiliza a LabRole do AWS Academy. Substitua ACCOUNT_ID pelo ID da sua conta,
+# que você obtém no seu lab com:
+#   aws iam get-role --role-name LabRole --query 'Role.Arn' --output text
+lab_role_arn = "arn:aws:iam::ACCOUNT_ID:role/LabRole"
 
 # Rede
 vpc_cidr           = "10.0.0.0/16"
