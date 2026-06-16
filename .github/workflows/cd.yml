@@ -1,0 +1,117 @@
+name: CD
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: cd-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  # ─── G1: Build + Push da imagem Docker para o GHCR ───
+  docker-build-push:
+    name: Docker build & push (GHCR)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image_ref: ${{ steps.meta.outputs.image_ref }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Normalizar nome da imagem (lowercase)
+        id: meta
+        run: |
+          IMAGE="${REGISTRY}/$(echo "${IMAGE_NAME}" | tr '[:upper:]' '[:lower:]')"
+          echo "image=${IMAGE}" >> "$GITHUB_OUTPUT"
+          echo "image_ref=${IMAGE}:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+
+      - name: Login no GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configurar Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build e push da imagem
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: |
+            ${{ steps.meta.outputs.image }}:${{ github.sha }}
+            ${{ steps.meta.outputs.image }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ─── G2/G3: Deploy no cluster Kubernetes (banco + aplicação) ───
+  deploy:
+    name: Deploy no Kubernetes
+    runs-on: ubuntu-latest
+    needs: docker-build-push
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verificar se o cluster está configurado
+        id: check
+        env:
+          KUBECONFIG_B64: ${{ secrets.KUBECONFIG }}
+        run: |
+          if [ -z "${KUBECONFIG_B64}" ]; then
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Secret KUBECONFIG não configurado — etapa de deploy será pulada. Configure em Settings → Secrets para habilitar o deploy automático."
+          else
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Setup kubectl
+        if: steps.check.outputs.present == 'true'
+        uses: azure/setup-kubectl@v4
+        with:
+          version: 'v1.29.0'
+
+      - name: Configurar acesso ao cluster
+        if: steps.check.outputs.present == 'true'
+        run: |
+          mkdir -p "$HOME/.kube"
+          echo "${{ secrets.KUBECONFIG }}" | base64 -d > "$HOME/.kube/config"
+          chmod 600 "$HOME/.kube/config"
+          kubectl cluster-info
+
+      - name: Atualizar imagem no manifesto da aplicação
+        if: steps.check.outputs.present == 'true'
+        run: |
+          sed -i "s|image: oficina-backend:latest|image: ${{ needs.docker-build-push.outputs.image_ref }}|" k8s/app-deployment.yaml
+          grep "image:" k8s/app-deployment.yaml
+
+      - name: Aplicar manifestos (namespace, config, banco e aplicação)
+        if: steps.check.outputs.present == 'true'
+        run: kubectl apply -f k8s/
+
+      - name: Aguardar rollout do banco de dados
+        if: steps.check.outputs.present == 'true'
+        run: kubectl rollout status deployment/oficina-db -n oficina --timeout=120s
+
+      - name: Aguardar rollout da aplicação
+        if: steps.check.outputs.present == 'true'
+        run: kubectl rollout status deployment/oficina-app -n oficina --timeout=180s
+
+      - name: Resumo do deploy
+        if: steps.check.outputs.present == 'true'
+        run: |
+          echo "### Deploy concluído :rocket:" >> "$GITHUB_STEP_SUMMARY"
+          echo "Imagem: ${{ needs.docker-build-push.outputs.image_ref }}" >> "$GITHUB_STEP_SUMMARY"
+          kubectl get pods,svc,hpa -n oficina

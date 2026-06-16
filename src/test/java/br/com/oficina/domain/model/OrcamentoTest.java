@@ -5,7 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import br.com.oficina.domain.enums.StatusOrcamentoItem;
 import br.com.oficina.domain.enums.TipoItem;
-import br.com.oficina.exception.BusinessException;
+import br.com.oficina.domain.exception.BusinessException;
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.Test;

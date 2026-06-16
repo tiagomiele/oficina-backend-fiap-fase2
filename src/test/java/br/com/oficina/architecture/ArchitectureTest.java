@@ -9,11 +9,13 @@ import com.tngtech.archunit.library.Architectures;
 import org.junit.jupiter.api.Test;
 
 /**
- * Valida a arquitetura em camadas do monolito:
+ * Valida a Clean Architecture (4 anéis) do monolito:
  *
  * <pre>
- *   controller -> service -> domain
- *   infrastructure -> domain
+ *   infrastructure (config, composition root)
+ *       → adapter (controllers, persistence, security, notification)
+ *       → usecase (gateways + services)
+ *       → domain (entities, value objects, enums)
  *   domain é puro (sem Spring/JPA/Servlet)
  * </pre>
  */
@@ -25,25 +27,25 @@ class ArchitectureTest {
           .importPackages("br.com.oficina");
 
   @Test
-  void camadasRespeitamDependencias() {
+  void cleanArchitecture4CamadasRespeitaDependencias() {
     Architectures.layeredArchitecture()
         .consideringAllDependencies()
-        .layer("controller")
-        .definedBy("br.com.oficina.controller..")
-        .layer("service")
-        .definedBy("br.com.oficina.service..")
         .layer("infrastructure")
         .definedBy("br.com.oficina.infrastructure..")
+        .layer("adapter")
+        .definedBy("br.com.oficina.adapter..")
+        .layer("usecase")
+        .definedBy("br.com.oficina.usecase..")
         .layer("domain")
         .definedBy("br.com.oficina.domain..")
-        .layer("config")
-        .definedBy("br.com.oficina.config..")
-        .whereLayer("controller")
-        .mayOnlyBeAccessedByLayers("config")
-        .whereLayer("service")
-        .mayOnlyBeAccessedByLayers("controller", "infrastructure", "config")
         .whereLayer("infrastructure")
-        .mayOnlyBeAccessedByLayers("controller", "service", "config")
+        .mayNotBeAccessedByAnyLayer()
+        .whereLayer("adapter")
+        .mayOnlyBeAccessedByLayers("infrastructure")
+        .whereLayer("usecase")
+        .mayOnlyBeAccessedByLayers("adapter", "infrastructure")
+        .whereLayer("domain")
+        .mayOnlyBeAccessedByLayers("usecase", "adapter", "infrastructure")
         .check(CLASSES);
   }
 
@@ -70,6 +72,29 @@ class ArchitectureTest {
         .should()
         .dependOnClassesThat()
         .resideInAnyPackage("jakarta.persistence..", "org.hibernate..")
+        .check(CLASSES);
+  }
+
+  @Test
+  void usecaseNaoDependeDeAdapterNemInfrastructure() {
+    noClasses()
+        .that()
+        .resideInAPackage("br.com.oficina.usecase..")
+        .should()
+        .dependOnClassesThat()
+        .resideInAnyPackage(
+            "br.com.oficina.adapter..", "br.com.oficina.infrastructure..")
+        .check(CLASSES);
+  }
+
+  @Test
+  void adapterNaoDependeDeInfrastructure() {
+    noClasses()
+        .that()
+        .resideInAPackage("br.com.oficina.adapter..")
+        .should()
+        .dependOnClassesThat()
+        .resideInAnyPackage("br.com.oficina.infrastructure..")
         .check(CLASSES);
   }
 }

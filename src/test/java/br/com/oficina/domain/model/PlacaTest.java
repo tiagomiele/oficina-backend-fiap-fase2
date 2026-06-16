@@ -3,7 +3,7 @@ package br.com.oficina.domain.model;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import br.com.oficina.exception.BusinessException;
+import br.com.oficina.domain.exception.BusinessException;
 import org.junit.jupiter.api.Test;
 
 class PlacaTest {

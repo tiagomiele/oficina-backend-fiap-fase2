@@ -1,6 +1,6 @@
 package br.com.oficina.domain.model;
 
-import br.com.oficina.exception.BusinessException;
+import br.com.oficina.domain.exception.BusinessException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.Objects;
