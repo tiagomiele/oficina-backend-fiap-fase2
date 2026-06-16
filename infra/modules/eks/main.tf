@@ -1,7 +1,21 @@
-# ─── IAM Role para o Cluster EKS ───
+# ─── IAM Roles ───
+#
+# Em uma conta AWS normal, o módulo cria as roles do cluster e dos nós.
+# Em ambientes restritos (ex.: AWS Academy Learner Lab), onde criar IAM roles
+# é bloqueado, informe uma role pré-existente em var.lab_role_arn (ex.: LabRole)
+# e o módulo a reutiliza para o cluster e para os worker nodes.
+
+locals {
+  use_lab_role     = var.lab_role_arn != ""
+  cluster_role_arn = local.use_lab_role ? var.lab_role_arn : aws_iam_role.cluster[0].arn
+  node_role_arn    = local.use_lab_role ? var.lab_role_arn : aws_iam_role.node[0].arn
+}
+
+# ─── IAM Role para o Cluster EKS (apenas quando NÃO se usa a lab_role) ───
 
 resource "aws_iam_role" "cluster" {
-  name = "${var.project_name}-${var.environment}-eks-cluster-role"
+  count = local.use_lab_role ? 0 : 1
+  name  = "${var.project_name}-${var.environment}-eks-cluster-role"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -18,13 +32,15 @@ resource "aws_iam_role" "cluster" {
 }
 
 resource "aws_iam_role_policy_attachment" "cluster_policy" {
+  count      = local.use_lab_role ? 0 : 1
   policy_arn = "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy"
-  role       = aws_iam_role.cluster.name
+  role       = aws_iam_role.cluster[0].name
 }
 
 resource "aws_iam_role_policy_attachment" "cluster_vpc_controller" {
+  count      = local.use_lab_role ? 0 : 1
   policy_arn = "arn:aws:iam::aws:policy/AmazonEKSVPCResourceController"
-  role       = aws_iam_role.cluster.name
+  role       = aws_iam_role.cluster[0].name
 }
 
 # ─── Security Group do Cluster ───
@@ -51,7 +67,7 @@ resource "aws_security_group" "cluster" {
 resource "aws_eks_cluster" "main" {
   name     = "${var.project_name}-${var.environment}"
   version  = var.cluster_version
-  role_arn = aws_iam_role.cluster.arn
+  role_arn = local.cluster_role_arn
 
   vpc_config {
     subnet_ids              = var.subnet_ids
@@ -66,10 +82,11 @@ resource "aws_eks_cluster" "main" {
   ]
 }
 
-# ─── IAM Role para os Worker Nodes ───
+# ─── IAM Role para os Worker Nodes (apenas quando NÃO se usa a lab_role) ───
 
 resource "aws_iam_role" "node" {
-  name = "${var.project_name}-${var.environment}-eks-node-role"
+  count = local.use_lab_role ? 0 : 1
+  name  = "${var.project_name}-${var.environment}-eks-node-role"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -86,18 +103,21 @@ resource "aws_iam_role" "node" {
 }
 
 resource "aws_iam_role_policy_attachment" "node_worker" {
+  count      = local.use_lab_role ? 0 : 1
   policy_arn = "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy"
-  role       = aws_iam_role.node.name
+  role       = aws_iam_role.node[0].name
 }
 
 resource "aws_iam_role_policy_attachment" "node_cni" {
+  count      = local.use_lab_role ? 0 : 1
   policy_arn = "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy"
-  role       = aws_iam_role.node.name
+  role       = aws_iam_role.node[0].name
 }
 
 resource "aws_iam_role_policy_attachment" "node_ecr" {
+  count      = local.use_lab_role ? 0 : 1
   policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
-  role       = aws_iam_role.node.name
+  role       = aws_iam_role.node[0].name
 }
 
 # ─── Security Group dos Nodes ───
@@ -140,7 +160,7 @@ resource "aws_security_group" "node" {
 resource "aws_eks_node_group" "main" {
   cluster_name    = aws_eks_cluster.main.name
   node_group_name = "${var.project_name}-${var.environment}-nodes"
-  node_role_arn   = aws_iam_role.node.arn
+  node_role_arn   = local.node_role_arn
   subnet_ids      = var.subnet_ids
   instance_types  = [var.node_instance_type]
 

@@ -33,3 +33,9 @@ variable "node_min_count" {
 variable "node_max_count" {
   type = number
 }
+
+variable "lab_role_arn" {
+  description = "ARN de uma IAM role pré-existente a ser reutilizada (ex.: LabRole no AWS Academy). Vazio = o módulo cria as roles."
+  type        = string
+  default     = ""
+}

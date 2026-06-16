@@ -93,3 +93,11 @@ variable "db_allocated_storage" {
   type        = number
   default     = 20
 }
+
+# ---------- AWS Academy (Learner Lab) ----------
+
+variable "lab_role_arn" {
+  description = "ARN de uma IAM role pré-existente para reutilizar (ex.: LabRole no AWS Academy, onde criar roles é bloqueado). Deixe vazio em conta AWS normal para o Terraform criar as roles."
+  type        = string
+  default     = ""
+}
