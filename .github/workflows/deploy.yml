@@ -68,6 +68,9 @@ jobs:
           set -euo pipefail
           rm -rf rendered && mkdir -p rendered
           cp k8s/*.yaml rendered/
+          # O Secret é provisionado por ambiente no passo seguinte (não usa o
+          # secret.yaml versionado, que contém apenas credenciais default).
+          rm -f rendered/secret.yaml
           # Troca o namespace fixo (oficina) pelo namespace do ambiente
           sed -i "s|name: oficina$|name: ${TARGET_NS}|" rendered/namespace.yaml
           sed -i "s|namespace: oficina$|namespace: ${TARGET_NS}|" rendered/*.yaml
@@ -75,6 +78,34 @@ jobs:
           sed -i "s|image: oficina-backend:latest|image: ${IMAGE_REF}|" rendered/app-deployment.yaml
           echo "Namespace alvo: ${TARGET_NS}"
           grep -h "image:" rendered/app-deployment.yaml
+
+      - name: Provisionar Secret do ambiente
+        if: steps.check.outputs.present == 'true'
+        env:
+          TARGET_NS: ${{ inputs.namespace }}
+          ENVIRONMENT: ${{ inputs.environment }}
+          APP_DB_PASSWORD: ${{ secrets.APP_DB_PASSWORD }}
+          APP_JWT_SECRET: ${{ secrets.APP_JWT_SECRET }}
+          APP_ADMIN_PASSWORD: ${{ secrets.APP_ADMIN_PASSWORD }}
+        run: |
+          set -euo pipefail
+          # Garante o namespace antes de criar o Secret
+          kubectl apply -f rendered/namespace.yaml
+          if [ -n "${APP_DB_PASSWORD}" ] && [ -n "${APP_JWT_SECRET}" ] && [ -n "${APP_ADMIN_PASSWORD}" ]; then
+            echo "Criando Secret a partir dos secrets do GitHub Environment '${ENVIRONMENT}'"
+            kubectl create secret generic oficina-secrets \
+              --namespace "${TARGET_NS}" \
+              --from-literal=DB_PASSWORD="${APP_DB_PASSWORD}" \
+              --from-literal=JWT_SECRET="${APP_JWT_SECRET}" \
+              --from-literal=ADMIN_PASSWORD="${APP_ADMIN_PASSWORD}" \
+              --dry-run=client -o yaml | kubectl apply -f -
+          elif [ "${ENVIRONMENT}" = "production" ]; then
+            echo "::error::Secrets de produção não configurados. Defina APP_DB_PASSWORD, APP_JWT_SECRET e APP_ADMIN_PASSWORD no GitHub Environment 'production'."
+            exit 1
+          else
+            echo "::warning::Secrets do ambiente não definidos — usando credenciais default de k8s/secret.yaml (apenas para STG/homologação; NÃO usar em produção)."
+            sed "s|namespace: oficina$|namespace: ${TARGET_NS}|" k8s/secret.yaml | kubectl apply -f -
+          fi
 
       - name: Aplicar manifestos (namespace, config, banco e aplicação)
         if: steps.check.outputs.present == 'true'
