@@ -1,8 +1,13 @@
 name: CD
 
+# Esteira de entrega com promoção por ambiente:
+#   feature/*  -> STG          (deploy automático)
+#   release/*  -> PRÉ-PRODUÇÃO (deploy automático)
+#   main / v*  -> PRODUÇÃO     (deploy com aprovação manual via GitHub Environment)
 on:
   push:
-    branches: [main]
+    branches: [main, 'feature/**', 'release/**']
+    tags: ['v*']
   workflow_dispatch:
 
 concurrency:
@@ -14,8 +19,8 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  # ─── G1: Build + Push da imagem Docker para o GHCR ───
-  docker-build-push:
+  # ─── Estágio 2: Build + Push da imagem Docker para o GHCR ───
+  build-publish:
     name: Docker build & push (GHCR)
     runs-on: ubuntu-latest
     permissions:
@@ -26,12 +31,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Normalizar nome da imagem (lowercase)
+      - name: Calcular nome e tags da imagem
         id: meta
         run: |
+          set -euo pipefail
           IMAGE="${REGISTRY}/$(echo "${IMAGE_NAME}" | tr '[:upper:]' '[:lower:]')"
-          echo "image=${IMAGE}" >> "$GITHUB_OUTPUT"
-          echo "image_ref=${IMAGE}:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+          SAFE_REF="$(echo "${GITHUB_REF_NAME}" | tr '/' '-' | tr '[:upper:]' '[:lower:]')"
+          TAGS="${IMAGE}:${GITHUB_SHA}
+          ${IMAGE}:${SAFE_REF}"
+          if [ "${GITHUB_REF}" = "refs/heads/main" ]; then
+            TAGS="${TAGS}
+          ${IMAGE}:latest"
+          fi
+          {
+            echo "image=${IMAGE}"
+            echo "image_ref=${IMAGE}:${GITHUB_SHA}"
+            echo "tags<<EOF"
+            echo "${TAGS}"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Login no GitHub Container Registry
         uses: docker/login-action@v3
@@ -49,69 +67,42 @@ jobs:
           context: .
           file: ./Dockerfile
           push: true
-          tags: |
-            ${{ steps.meta.outputs.image }}:${{ github.sha }}
-            ${{ steps.meta.outputs.image }}:latest
+          tags: ${{ steps.meta.outputs.tags }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  # ─── G2/G3: Deploy no cluster Kubernetes (banco + aplicação) ───
-  deploy:
-    name: Deploy no Kubernetes
-    runs-on: ubuntu-latest
-    needs: docker-build-push
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v4
+  # ─── Estágio 3a: Deploy em STG (branches feature/*) ───
+  deploy-stg:
+    name: Deploy STG
+    needs: build-publish
+    if: startsWith(github.ref, 'refs/heads/feature/')
+    uses: ./.github/workflows/deploy.yml
+    with:
+      environment: staging
+      namespace: oficina-stg
+      image_ref: ${{ needs.build-publish.outputs.image_ref }}
+    secrets: inherit
 
-      - name: Verificar se o cluster está configurado
-        id: check
-        env:
-          KUBECONFIG_B64: ${{ secrets.KUBECONFIG }}
-        run: |
-          if [ -z "${KUBECONFIG_B64}" ]; then
-            echo "present=false" >> "$GITHUB_OUTPUT"
-            echo "::warning::Secret KUBECONFIG não configurado — etapa de deploy será pulada. Configure em Settings → Secrets para habilitar o deploy automático."
-          else
-            echo "present=true" >> "$GITHUB_OUTPUT"
-          fi
+  # ─── Estágio 3b: Deploy em PRÉ-PRODUÇÃO (branches release/*) ───
+  deploy-preprod:
+    name: Deploy PRÉ-PRODUÇÃO
+    needs: build-publish
+    if: startsWith(github.ref, 'refs/heads/release/')
+    uses: ./.github/workflows/deploy.yml
+    with:
+      environment: pre-prod
+      namespace: oficina-homolog
+      image_ref: ${{ needs.build-publish.outputs.image_ref }}
+    secrets: inherit
 
-      - name: Setup kubectl
-        if: steps.check.outputs.present == 'true'
-        uses: azure/setup-kubectl@v4
-        with:
-          version: 'v1.29.0'
-
-      - name: Configurar acesso ao cluster
-        if: steps.check.outputs.present == 'true'
-        run: |
-          mkdir -p "$HOME/.kube"
-          echo "${{ secrets.KUBECONFIG }}" | base64 -d > "$HOME/.kube/config"
-          chmod 600 "$HOME/.kube/config"
-          kubectl cluster-info
-
-      - name: Atualizar imagem no manifesto da aplicação
-        if: steps.check.outputs.present == 'true'
-        run: |
-          sed -i "s|image: oficina-backend:latest|image: ${{ needs.docker-build-push.outputs.image_ref }}|" k8s/app-deployment.yaml
-          grep "image:" k8s/app-deployment.yaml
-
-      - name: Aplicar manifestos (namespace, config, banco e aplicação)
-        if: steps.check.outputs.present == 'true'
-        run: kubectl apply -f k8s/
-
-      - name: Aguardar rollout do banco de dados
-        if: steps.check.outputs.present == 'true'
-        run: kubectl rollout status deployment/oficina-db -n oficina --timeout=120s
-
-      - name: Aguardar rollout da aplicação
-        if: steps.check.outputs.present == 'true'
-        run: kubectl rollout status deployment/oficina-app -n oficina --timeout=180s
-
-      - name: Resumo do deploy
-        if: steps.check.outputs.present == 'true'
-        run: |
-          echo "### Deploy concluído :rocket:" >> "$GITHUB_STEP_SUMMARY"
-          echo "Imagem: ${{ needs.docker-build-push.outputs.image_ref }}" >> "$GITHUB_STEP_SUMMARY"
-          kubectl get pods,svc,hpa -n oficina
+  # ─── Estágio 3c: Deploy em PRODUÇÃO (main / tag v*) — com aprovação manual ───
+  deploy-prod:
+    name: Deploy PRODUÇÃO
+    needs: build-publish
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+    uses: ./.github/workflows/deploy.yml
+    with:
+      environment: production
+      namespace: oficina-prod
+      image_ref: ${{ needs.build-publish.outputs.image_ref }}
+    secrets: inherit
