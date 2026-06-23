@@ -1,0 +1,34 @@
+# ─── Exemplo de configuração para AWS Academy (Learner Lab) ───
+# Copie para terraform.tfvars e ajuste:
+#   cp terraform.tfvars.academy.example terraform.tfvars
+#
+# Diferenças em relação a uma conta AWS normal:
+#  - Região fixada em us-west-2 (única liberada no Learner Lab)
+#  - lab_role_arn aponta para a LabRole (o lab bloqueia a criação de IAM roles)
+#  - Tamanhos reduzidos para caber no orçamento do lab
+
+aws_region  = "us-west-2"
+environment = "dev"
+
+# Reutiliza a LabRole do AWS Academy. Substitua ACCOUNT_ID pelo ID da sua conta,
+# que você obtém no seu lab com:
+#   aws iam get-role --role-name LabRole --query 'Role.Arn' --output text
+lab_role_arn = "arn:aws:iam::ACCOUNT_ID:role/LabRole"
+
+# Rede
+vpc_cidr           = "10.0.0.0/16"
+availability_zones = ["us-west-2a", "us-west-2b"]
+
+# EKS (tamanho enxuto para o orçamento do lab)
+cluster_version    = "1.29"
+node_instance_type = "t3.medium"
+node_desired_count = 2
+node_min_count     = 1
+node_max_count     = 3
+
+# RDS
+db_instance_class    = "db.t3.micro"
+db_name              = "oficina"
+db_username          = "oficina"
+db_password          = "ALTERAR_PARA_SENHA_SEGURA"
+db_allocated_storage = 20

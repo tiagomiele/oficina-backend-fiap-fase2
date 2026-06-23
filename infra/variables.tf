@@ -35,7 +35,7 @@ variable "availability_zones" {
 variable "cluster_version" {
   description = "Versão do Kubernetes no EKS"
   type        = string
-  default     = "1.29"
+  default     = "1.31"
 }
 
 variable "node_instance_type" {
@@ -92,4 +92,12 @@ variable "db_allocated_storage" {
   description = "Armazenamento alocado em GB"
   type        = number
   default     = 20
+}
+
+# ---------- AWS Academy (Learner Lab) ----------
+
+variable "lab_role_arn" {
+  description = "ARN de uma IAM role pré-existente para reutilizar (ex.: LabRole no AWS Academy, onde criar roles é bloqueado). Deixe vazio em conta AWS normal para o Terraform criar as roles."
+  type        = string
+  default     = ""
 }
