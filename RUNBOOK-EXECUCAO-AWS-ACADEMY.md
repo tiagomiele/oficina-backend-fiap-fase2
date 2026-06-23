@@ -43,11 +43,40 @@ terraform version
 
 ## 🔑 Passo 0 — clonar o repo e checar credenciais
 
+### 0.1 — Gerar o token do GitHub (o repo é **privado**)
+
+O GitHub **não aceita mais senha** no `git clone` — você precisa de um **Personal Access Token (PAT)**. Caminho para pegar o token real:
+
+1. Acesse: **https://github.com/settings/tokens/new**
+   (ou pelo menu: foto do perfil → **Settings** → **Developer settings** → **Personal access tokens** → **Tokens (classic)** → **Generate new token (classic)**)
+2. **Note**: `lab-clone`
+3. **Expiration**: `7 days` (ou o que preferir)
+4. **Select scopes**: marque a caixa **`repo`** (a primeira — cobre repositórios privados)
+5. Role até o fim e clique em **Generate token**
+6. **Copie o token** (começa com `ghp_...`) — ele **só aparece uma vez**. Guarde num lugar seguro.
+
+> ⚠️ **Nunca** cole o token em chat, commit ou documentação. Se vazar, revogue em https://github.com/settings/tokens (**Delete**) e gere outro.
+
+### 0.2 — Clonar com o token
+
+Embuta o token na URL (troque `ghp_SEU_TOKEN` pelo seu):
 ```bash
 cd ~
-git clone https://github.com/tiagomiele/oficina-backend-fiap-fase2.git
+git clone https://tiagomiele:ghp_SEU_TOKEN@github.com/tiagomiele/oficina-backend-fiap-fase2.git
 cd oficina-backend-fiap-fase2
 
+# os fixes do AWS Academy estão na branch do PR #2:
+git checkout devin/1781651195-terraform-aws-academy
+```
+
+**Erros comuns nesta etapa:**
+- `Password authentication is not supported` → o que você colou na senha **não é um PAT válido** (era a senha da conta, token expirado, ou sem o escopo `repo`). Gere um novo seguindo o 0.1.
+- `destination path '...' already exists and is not an empty directory` → a pasta já existe. Use o que já está lá (`cd oficina-backend-fiap-fase2 && git pull`) **ou** apague: `cd ~ && rm -rf oficina-backend-fiap-fase2` e clone de novo.
+- `Stale file handle` ao apagar/clonar → você está **dentro** da pasta que tentou apagar. Saia antes: `cd ~` e só então rode o `rm -rf`/`git clone`.
+
+### 0.3 — Checar credenciais da AWS
+
+```bash
 # confirma que as credenciais do lab estão ativas
 aws sts get-caller-identity
 ```
@@ -96,6 +125,13 @@ db_allocated_storage = 20
 EOF
 ```
 
+> 🛑 **AWS Academy — atenção (causa de erro #1):** a linha `lab_role_arn` é **obrigatória**. No Learner Lab você **não tem permissão para criar IAM roles**; sem essa linha o `terraform apply` quebra com `AccessDenied ... iam:CreateRole`. Com ela, o Terraform **reutiliza a LabRole**. Confirme antes do apply:
+> ```bash
+> grep lab_role_arn terraform.tfvars   # deve mostrar o ARN da LabRole
+> aws sts get-caller-identity --query Account --output text   # deve bater com o nº da conta no ARN (163061816974)
+> ```
+> Se a sua conta for diferente de `163061816974`, ajuste o número no `lab_role_arn`.
+
 Provisione:
 ```bash
 terraform init
@@ -135,8 +171,15 @@ A imagem precisa estar **pública** pro EKS baixar sem credencial. Confira/ajust
 → **Danger Zone → Change visibility → Public**. (Libera só a imagem Docker, não o repositório.)
 
 ### 3.2 — ajustar os manifestos pro RDS
+
+> 🛑 **Atenção (causa de erro #3):** o **endpoint do RDS muda a cada `terraform apply`** (a AWS gera um trecho aleatório no hostname). Por isso o `DB_URL` do configmap **tem que ser setado a partir do `terraform output`**, nunca digitado/hardcoded. Se o `DB_URL` ficar errado (ou vazio), o app cai no default `localhost` e os pods entram em `CrashLoopBackOff` com `Connection to localhost:5432 refused`.
+
 ```bash
 cd ~/oficina-backend-fiap-fase2
+
+# (re)descobre o endpoint do RDS DESTE apply — rode sempre, mesmo em sessão nova
+RDS_HOST=$(cd infra && terraform output -raw rds_endpoint | cut -d: -f1)
+echo "RDS_HOST=$RDS_HOST"   # NÃO pode vir vazio
 
 # aponta o app pro endpoint do RDS deste apply
 sed -i "s#jdbc:postgresql://[^/]*/oficina#jdbc:postgresql://${RDS_HOST}:5432/oficina#" k8s/configmap.yaml
@@ -174,13 +217,16 @@ Os pods passam por `ContainerCreating` → `Running` → `1/1`. Leva ~1-2 min.
 
 ```bash
 EXT=$(kubectl get svc oficina-app -n oficina -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
-echo "URL: http://$EXT"
+echo "URL base:  http://$EXT"
+echo "Swagger:   http://$EXT/swagger-ui/index.html"
 
 # health check (esperado: {"status":"UP",...})
 curl -s "http://$EXT/actuator/health"; echo
 # swagger (esperado: HTTP 200)
 curl -s -o /dev/null -w "Swagger HTTP %{http_code}\n" "http://$EXT/swagger-ui/index.html"
 ```
+
+> 🔎 **Como descobrir a URL do Swagger:** é sempre `http://<EXT>/swagger-ui/index.html`, onde `<EXT>` é o hostname do LoadBalancer (o comando acima já monta e imprime a URL pronta). Só existe **um** Swagger — o do serviço rodando no EKS; não há outro para escolher. Abra essa URL no navegador, faça login em `01.01 - Login` (`admin@oficina.local` / `admin123`), clique em **Authorize** 🔒, cole o token e teste os endpoints.
 > ⏱️ O LoadBalancer (ELB) leva ~2-3 min pra começar a responder. Se der `timeout`/`Empty reply` na 1ª vez, espere 1 min e repita.
 
 ### Smoke test da API (login + criar serviço + listar = grava no RDS)
@@ -255,6 +301,9 @@ aws elbv2 describe-load-balancers --region us-west-2 --query "LoadBalancers[].Lo
 | `from_port (0) and to_port (65535) must both be 0 to use 'ALL' "-1"` | Regra de SG com protocolo `-1` exige porta 0 | Já corrigido no `modules/eks/main.tf` |
 | `Cannot find version 16.3 for postgres` | Versão de Postgres indisponível na região | Terraform já descobre a versão 16 mais recente automaticamente |
 | `kubectl`: `invalid apiVersion ...v1alpha1` | kubeconfig gerado pelo AWS CLI **v1** | Use AWS CLI **v2** e rode `update-kubeconfig` de novo |
+| Pods em `CrashLoopBackOff` com `Connection to localhost:5432 refused` (Flyway) | `DB_URL` não aponta pro RDS (configmap não ajustado / `RDS_HOST` vazio) | Refaça o Passo 3.2 derivando `RDS_HOST` do `terraform output`, `kubectl apply -f k8s/configmap.yaml` e `kubectl rollout restart deployment/oficina-app -n oficina` |
+| `git clone`: `Password authentication is not supported` | Usou senha da conta em vez de PAT, ou token sem escopo `repo` | Gere um PAT (classic, escopo `repo`) — Passo 0.1 — e use no clone |
+| `git clone`: `Stale file handle` | Você está **dentro** da pasta que tentou apagar | `cd ~` antes de `rm -rf`/`git clone` |
 | Pods em `CrashLoopBackOff` com `SocketTimeoutException: Connect timed out` (Flyway) | RDS não libera a **cluster security group** do EKS (só a node-SG) | Já corrigido no Terraform (`modules/rds` libera a cluster-SG). Se reaparecer ao vivo: `aws ec2 authorize-security-group-ingress --region us-west-2 --group-id <RDS_SG> --protocol tcp --port 5432 --source-group <CLUSTER_SG>` |
 | Pods em `ImagePullBackOff` | Imagem do GHCR ainda **privada** | Torne o pacote **Public** (Passo 3.1) |
 | `/actuator/health` dá timeout no 1º acesso | ELB ainda provisionando | Espere ~2-3 min e tente de novo |
@@ -264,10 +313,14 @@ aws elbv2 describe-load-balancers --region us-west-2 --query "LoadBalancers[].Lo
 ## 📝 Resumo ultrarrápido (TL;DR)
 
 ```bash
-# 0. pré-requisitos instalados (aws v2, kubectl, terraform) + repo clonado
+# 0. CLONAR (repo privado: use PAT classic com escopo repo — Passo 0.1)
+cd ~
+git clone https://tiagomiele:ghp_SEU_TOKEN@github.com/tiagomiele/oficina-backend-fiap-fase2.git
+cd oficina-backend-fiap-fase2 && git checkout devin/1781651195-terraform-aws-academy
 # 1. INFRA
 cd ~/oficina-backend-fiap-fase2/infra
-cp terraform.tfvars.example terraform.tfvars   # e ajuste (região us-west-2, k8s 1.31, senha)
+cp terraform.tfvars.example terraform.tfvars   # já vem com us-west-2, k8s 1.31 e lab_role_arn (LabRole)!
+sed -i 's/ALTERAR_PARA_SENHA_SEGURA/OficinaFase2!2026A/' terraform.tfvars   # caso esteja com placeholder
 terraform init && terraform apply -auto-approve
 RDS_HOST=$(terraform output -raw rds_endpoint | cut -d: -f1)
 # 2. KUBECTL
