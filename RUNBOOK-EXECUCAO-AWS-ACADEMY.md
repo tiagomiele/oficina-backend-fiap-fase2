@@ -72,6 +72,10 @@ cat > terraform.tfvars <<'EOF'
 aws_region  = "us-west-2"
 environment = "dev"
 
+# AWS Academy / Learner Lab: reutiliza a LabRole (criar IAM roles e bloqueado).
+# Sem esta linha, o apply falha com 403 iam:CreateRole.
+lab_role_arn = "arn:aws:iam::163061816974:role/LabRole"
+
 # Rede
 vpc_cidr           = "10.0.0.0/16"
 availability_zones = ["us-west-2a", "us-west-2b"]
@@ -246,6 +250,7 @@ aws elbv2 describe-load-balancers --region us-west-2 --query "LoadBalancers[].Lo
 
 | Sintoma | Causa | Solução |
 |---|---|---|
+| `AccessDenied: ... iam:CreateRole` | No AWS Academy não se pode criar IAM roles | Defina `lab_role_arn = "arn:aws:iam::163061816974:role/LabRole"` no tfvars (já neste runbook) |
 | `unsupported Kubernetes version 1.29` | AWS removeu 1.29 em us-west-2 | Use `cluster_version = "1.31"` (já no tfvars deste runbook) |
 | `from_port (0) and to_port (65535) must both be 0 to use 'ALL' "-1"` | Regra de SG com protocolo `-1` exige porta 0 | Já corrigido no `modules/eks/main.tf` |
 | `Cannot find version 16.3 for postgres` | Versão de Postgres indisponível na região | Terraform já descobre a versão 16 mais recente automaticamente |
