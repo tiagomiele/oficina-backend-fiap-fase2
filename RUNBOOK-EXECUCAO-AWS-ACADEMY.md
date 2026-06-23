@@ -65,8 +65,8 @@ cd ~
 git clone https://tiagomiele:ghp_SEU_TOKEN@github.com/tiagomiele/oficina-backend-fiap-fase2.git
 cd oficina-backend-fiap-fase2
 
-# os fixes do AWS Academy estão na branch do PR #2:
-git checkout devin/1781651195-terraform-aws-academy
+# os fixes do AWS Academy + este runbook já estão na main (PR de consolidação):
+git checkout main && git pull
 ```
 
 **Erros comuns nesta etapa:**
@@ -86,51 +86,44 @@ A saída deve mostrar a conta `163061816974` e a `LabRole`. Se der erro de crede
 
 ## 🏗️ Passo 1 — provisionar a infra (Terraform)
 
+Para o AWS Academy, use o exemplo **`terraform.tfvars.academy.example`** (já vem com `us-west-2`, `cluster_version = 1.31` e a estrutura da LabRole). O exemplo "comum" (`terraform.tfvars.example`) é para conta AWS normal — não use no lab.
+
 ```bash
 cd ~/oficina-backend-fiap-fase2/infra
 
-# cria o terraform.tfvars a partir do exemplo
-cp terraform.tfvars.example terraform.tfvars
+# cria o terraform.tfvars a partir do exemplo do AWS Academy
+cp terraform.tfvars.academy.example terraform.tfvars
 ```
 
-Agora **edite o `terraform.tfvars`** com os valores que funcionam no Learner Lab (`us-west-2`).
-Cole este bloco que já sobrescreve o arquivo com os valores corretos:
+### O que você precisa preencher (e de onde tirar o valor)
+
+| Campo no `terraform.tfvars` | O que é / o que colocar | De onde pegar o valor |
+|---|---|---|
+| `lab_role_arn` | ARN da **LabRole** da sua conta (vem como `arn:aws:iam::ACCOUNT_ID:role/LabRole` — você troca o `ACCOUNT_ID` pelo número da SUA conta) | Rode no terminal do lab: `aws iam get-role --role-name LabRole --query 'Role.Arn' --output text` |
+| `db_password` | A senha que o RDS vai usar (vem como `ALTERAR_PARA_SENHA_SEGURA`) | **Você escolhe.** Anote — vai precisar dela no Passo 3 (secret) e pra acessar o banco. Ex.: `OficinaFase2!2026A` |
+
+> 💡 As credenciais do lab **mudam a cada vez que você inicia o Learner Lab**, mas o **número da conta** e o **ARN da LabRole** costumam ser os mesmos. Ainda assim, **sempre** pegue o ARN com o comando acima — é a fonte da verdade desta execução.
+
+Cole este bloco que **preenche os dois campos automaticamente** (pega o ARN da sua conta e define a senha):
 
 ```bash
-cat > terraform.tfvars <<'EOF'
-aws_region  = "us-west-2"
-environment = "dev"
+# 1) descobre o ARN da LabRole DESTA conta e injeta no tfvars
+LAB_ROLE_ARN=$(aws iam get-role --role-name LabRole --query 'Role.Arn' --output text)
+echo "LabRole desta conta: $LAB_ROLE_ARN"   # NÃO pode vir vazio
+sed -i "s#arn:aws:iam::ACCOUNT_ID:role/LabRole#${LAB_ROLE_ARN}#" terraform.tfvars
 
-# AWS Academy / Learner Lab: reutiliza a LabRole (criar IAM roles e bloqueado).
-# Sem esta linha, o apply falha com 403 iam:CreateRole.
-lab_role_arn = "arn:aws:iam::163061816974:role/LabRole"
+# 2) define a senha do banco (troque pela que quiser; anote-a!)
+sed -i 's/ALTERAR_PARA_SENHA_SEGURA/OficinaFase2!2026A/' terraform.tfvars
 
-# Rede
-vpc_cidr           = "10.0.0.0/16"
-availability_zones = ["us-west-2a", "us-west-2b"]
-
-# EKS
-cluster_version    = "1.31"
-node_instance_type = "t3.medium"
-node_desired_count = 2
-node_min_count     = 2
-node_max_count     = 5
-
-# RDS
-db_instance_class    = "db.t3.micro"
-db_name              = "oficina"
-db_username          = "oficina"
-db_password          = "OficinaFase2!2026A"
-db_allocated_storage = 20
-EOF
+# 3) confere que os dois ficaram preenchidos (sem ACCOUNT_ID e sem ALTERAR_...)
+grep -E 'lab_role_arn|db_password' terraform.tfvars
 ```
 
-> 🛑 **AWS Academy — atenção (causa de erro #1):** a linha `lab_role_arn` é **obrigatória**. No Learner Lab você **não tem permissão para criar IAM roles**; sem essa linha o `terraform apply` quebra com `AccessDenied ... iam:CreateRole`. Com ela, o Terraform **reutiliza a LabRole**. Confirme antes do apply:
+> 🛑 **AWS Academy — atenção (causa de erro #1):** a linha `lab_role_arn` é **obrigatória** e tem que apontar pra LabRole da **sua** conta. No Learner Lab você **não tem permissão para criar IAM roles**; sem essa linha (ou com o `ACCOUNT_ID` não substituído) o `terraform apply` quebra com `AccessDenied ... iam:CreateRole`. Confirme antes do apply:
 > ```bash
-> grep lab_role_arn terraform.tfvars   # deve mostrar o ARN da LabRole
-> aws sts get-caller-identity --query Account --output text   # deve bater com o nº da conta no ARN (163061816974)
+> grep lab_role_arn terraform.tfvars   # NÃO pode conter "ACCOUNT_ID"
+> aws sts get-caller-identity --query Account --output text   # deve bater com o nº da conta no ARN acima
 > ```
-> Se a sua conta for diferente de `163061816974`, ajuste o número no `lab_role_arn`.
 
 Provisione:
 ```bash
@@ -296,7 +289,7 @@ aws elbv2 describe-load-balancers --region us-west-2 --query "LoadBalancers[].Lo
 
 | Sintoma | Causa | Solução |
 |---|---|---|
-| `AccessDenied: ... iam:CreateRole` | No AWS Academy não se pode criar IAM roles | Defina `lab_role_arn = "arn:aws:iam::163061816974:role/LabRole"` no tfvars (já neste runbook) |
+| `AccessDenied: ... iam:CreateRole` | No AWS Academy não se pode criar IAM roles | Defina `lab_role_arn` com a LabRole da sua conta no tfvars — pegue o ARN com `aws iam get-role --role-name LabRole --query 'Role.Arn' --output text` (Passo 1) |
 | `unsupported Kubernetes version 1.29` | AWS removeu 1.29 em us-west-2 | Use `cluster_version = "1.31"` (já no tfvars deste runbook) |
 | `from_port (0) and to_port (65535) must both be 0 to use 'ALL' "-1"` | Regra de SG com protocolo `-1` exige porta 0 | Já corrigido no `modules/eks/main.tf` |
 | `Cannot find version 16.3 for postgres` | Versão de Postgres indisponível na região | Terraform já descobre a versão 16 mais recente automaticamente |
@@ -316,11 +309,13 @@ aws elbv2 describe-load-balancers --region us-west-2 --query "LoadBalancers[].Lo
 # 0. CLONAR (repo privado: use PAT classic com escopo repo — Passo 0.1)
 cd ~
 git clone https://tiagomiele:ghp_SEU_TOKEN@github.com/tiagomiele/oficina-backend-fiap-fase2.git
-cd oficina-backend-fiap-fase2 && git checkout devin/1781651195-terraform-aws-academy
-# 1. INFRA
+cd oficina-backend-fiap-fase2 && git checkout main && git pull
+# 1. INFRA (AWS Academy: use o exemplo .academy.example)
 cd ~/oficina-backend-fiap-fase2/infra
-cp terraform.tfvars.example terraform.tfvars   # já vem com us-west-2, k8s 1.31 e lab_role_arn (LabRole)!
-sed -i 's/ALTERAR_PARA_SENHA_SEGURA/OficinaFase2!2026A/' terraform.tfvars   # caso esteja com placeholder
+cp terraform.tfvars.academy.example terraform.tfvars   # us-west-2 + k8s 1.31
+LAB_ROLE_ARN=$(aws iam get-role --role-name LabRole --query 'Role.Arn' --output text)
+sed -i "s#arn:aws:iam::ACCOUNT_ID:role/LabRole#${LAB_ROLE_ARN}#" terraform.tfvars   # injeta a LabRole da sua conta
+sed -i 's/ALTERAR_PARA_SENHA_SEGURA/OficinaFase2!2026A/' terraform.tfvars          # define a senha do banco
 terraform init && terraform apply -auto-approve
 RDS_HOST=$(terraform output -raw rds_endpoint | cut -d: -f1)
 # 2. KUBECTL
