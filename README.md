@@ -364,28 +364,45 @@ Os manifestos estão em [`/k8s`](./k8s) e cobrem Deployments, Services, ConfigMa
 minikube start --driver=docker --cpus=2 --memory=4096
 
 # 2. Apontar o Docker para o Minikube e buildar a imagem
+#    A imagem TEM que ser buildada ANTES do apply (o manifesto usa
+#    imagePullPolicy: IfNotPresent; sem a imagem local, os pods ficam em ErrImagePull).
 eval $(minikube docker-env)
 docker build -t oficina-backend:latest .
 
-# 3. Aplicar todos os manifestos
+# 3. Aplicar os manifestos — o namespace PRIMEIRO
+#    (kubectl aplica a pasta em ordem alfabética; sem isso, app/configmap/hpa
+#     falham com 'namespaces "oficina" not found')
+kubectl apply -f k8s/namespace.yaml
 kubectl apply -f k8s/
 
-# 4. Aguardar os pods ficarem prontos
+# 4. Aguardar os pods ficarem prontos (Ctrl+C quando ambos estiverem 1/1 Running)
 kubectl get pods -n oficina -w
 
 # 5. Acessar a aplicação
 kubectl port-forward svc/oficina-app 8080:80 -n oficina
-# Abra: http://localhost:8080/swagger-ui.html
+# Abra: http://localhost:8080/swagger-ui/index.html
 ```
+
+> 🪟 **No Windows (PowerShell)** o `eval $(minikube docker-env)` não funciona. Use:
+> ```powershell
+> & minikube -p minikube docker-env --shell powershell | Invoke-Expression
+> ```
+> Esse comando vale **só para a janela atual** do PowerShell — se abrir outra, rode de novo antes de `docker build`.
+>
+> 💡 Após um `kubectl rollout restart deployment/oficina-app -n oficina`, o `port-forward` antigo cai (estava preso ao pod removido). Rode o `kubectl port-forward ...` de novo apontando para os pods novos.
 
 ### Opção B — Cloud (AWS EKS)
 
-Após provisionar a infraestrutura (ver seção seguinte) e configurar o `kubectl`:
+Na nuvem há detalhes que **não** existem no local (imagem vinda de registry público, banco no RDS com endpoint que muda a cada apply, LoadBalancer/ELB, custo). Por isso, **siga o runbook dedicado e já testado**: [`RUNBOOK-EXECUCAO-AWS-ACADEMY.md`](./RUNBOOK-EXECUCAO-AWS-ACADEMY.md).
 
-```bash
-kubectl apply -f k8s/
-kubectl get svc oficina-app -n oficina   # pega a URL pública (LoadBalancer/ELB)
-```
+Resumo do que muda em relação ao local:
+
+| Ponto | Local (Minikube) | Cloud (AWS EKS) |
+|---|---|---|
+| Imagem | buildada localmente (`oficina-backend:latest`) | registry **público** (`ghcr.io/tiagomiele/...`) |
+| Banco | PostgreSQL no cluster (`postgres-*.yaml`) | **RDS** — `DB_URL` derivado do `terraform output` (muda a cada apply) |
+| Acesso | `port-forward` → `localhost:8080` | **LoadBalancer/ELB** com URL pública |
+| Custo | grátis | consome crédito → rode `terraform destroy` no fim |
 
 ### Recursos aplicados
 

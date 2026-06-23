@@ -64,10 +64,25 @@ Embuta o token na URL (troque `ghp_SEU_TOKEN` pelo seu):
 cd ~
 git clone https://tiagomiele:ghp_SEU_TOKEN@github.com/tiagomiele/oficina-backend-fiap-fase2.git
 cd oficina-backend-fiap-fase2
-
-# os fixes do AWS Academy + este runbook já estão na main (PR de consolidação):
-git checkout main && git pull
 ```
+
+Agora **garanta que você está no código com os fixes** (LabRole, k8s 1.31, regra de SG) — escolha **um** caso:
+
+- **Se o PR de consolidação JÁ foi mergeado na `main`:**
+  ```bash
+  git checkout main && git pull
+  ```
+- **Se o PR ainda está ABERTO** (não mergeado), use a branch consolidada direto:
+  ```bash
+  git checkout devin/1782211329-consolida-cicd-aws
+  ```
+
+> 🛑 **Confirme antes de seguir** (causa de erro silencioso): se você ficar na `main` **sem os fixes**, o `terraform apply` tenta **criar IAM roles** (403) e usa a regra de SG antiga. Verifique:
+> ```bash
+> git rev-parse --abbrev-ref HEAD                                   # branch atual
+> grep -n 'count = local.use_lab_role' infra/modules/eks/main.tf    # TEM que achar (linha ~17/88)
+> ```
+> Se o `grep` **não achar nada**, você está no código antigo — faça o `git checkout` da branch/`main` correta antes de continuar.
 
 **Erros comuns nesta etapa:**
 - `Password authentication is not supported` → o que você colou na senha **não é um PAT válido** (era a senha da conta, token expirado, ou sem o escopo `repo`). Gere um novo seguindo o 0.1.
@@ -129,6 +144,11 @@ Provisione:
 ```bash
 terraform init
 terraform plan -out=tfplan
+```
+
+> 🛑 **Confira a região no resumo do `plan` ANTES de aplicar (causa de recursos órfãos):** o plano tem que mostrar `us-west-2` e **nenhuma** criação de `aws_iam_role.cluster`/`aws_iam_role.node`. Se você já tinha rodado um apply numa região diferente (ex.: `us-east-1`, do `terraform.tfvars.example` genérico), trocar de região **abandona** os recursos antigos no *state* — eles viram **órfãos** (principalmente o **NAT gateway**, que custa crédito) e o `terraform destroy` do fim **não** os remove. Veja como limpar na seção de Troubleshooting.
+
+```bash
 terraform apply tfplan      # digite 'yes' se pedir confirmação
 ```
 
@@ -297,6 +317,8 @@ aws elbv2 describe-load-balancers --region us-west-2 --query "LoadBalancers[].Lo
 | Pods em `CrashLoopBackOff` com `Connection to localhost:5432 refused` (Flyway) | `DB_URL` não aponta pro RDS (configmap não ajustado / `RDS_HOST` vazio) | Refaça o Passo 3.2 derivando `RDS_HOST` do `terraform output`, `kubectl apply -f k8s/configmap.yaml` e `kubectl rollout restart deployment/oficina-app -n oficina` |
 | `git clone`: `Password authentication is not supported` | Usou senha da conta em vez de PAT, ou token sem escopo `repo` | Gere um PAT (classic, escopo `repo`) — Passo 0.1 — e use no clone |
 | `git clone`: `Stale file handle` | Você está **dentro** da pasta que tentou apagar | `cd ~` antes de `rm -rf`/`git clone` |
+| `apply` quebra com `iam:CreateRole` mesmo com `lab_role_arn` setado, e o erro aponta `aws_iam_role.cluster` **sem `[0]`** na linha ~3 | Você está no **código antigo** (branch `main` sem os fixes) | `git checkout` da branch consolidada (ou `main` já mergeada); confirme com `grep 'count = local.use_lab_role' infra/modules/eks/main.tf` (Passo 0.2) |
+| Recursos **órfãos** noutra região (ex.: `us-east-1`) após trocar a região do tfvars — `terraform destroy` não os remove | Mudar de região tira os recursos do *state*; eles ficam para trás (NAT gateway gasta crédito) | Apague na mão na região antiga: delete o **NAT gateway** → libere o **Elastic IP** → delete a **VPC** (console: VPC → *Delete VPC*, que remove subnets/IGW/SG/route tables junto). Confira: `aws ec2 describe-nat-gateways --region <REGIAO> --filter Name=state,Values=available` |
 | Pods em `CrashLoopBackOff` com `SocketTimeoutException: Connect timed out` (Flyway) | RDS não libera a **cluster security group** do EKS (só a node-SG) | Já corrigido no Terraform (`modules/rds` libera a cluster-SG). Se reaparecer ao vivo: `aws ec2 authorize-security-group-ingress --region us-west-2 --group-id <RDS_SG> --protocol tcp --port 5432 --source-group <CLUSTER_SG>` |
 | Pods em `ImagePullBackOff` | Imagem do GHCR ainda **privada** | Torne o pacote **Public** (Passo 3.1) |
 | `/actuator/health` dá timeout no 1º acesso | ELB ainda provisionando | Espere ~2-3 min e tente de novo |
@@ -309,7 +331,10 @@ aws elbv2 describe-load-balancers --region us-west-2 --query "LoadBalancers[].Lo
 # 0. CLONAR (repo privado: use PAT classic com escopo repo — Passo 0.1)
 cd ~
 git clone https://tiagomiele:ghp_SEU_TOKEN@github.com/tiagomiele/oficina-backend-fiap-fase2.git
-cd oficina-backend-fiap-fase2 && git checkout main && git pull
+cd oficina-backend-fiap-fase2
+# se o PR de consolidação já foi mergeado: git checkout main && git pull
+# se ainda está aberto:                  git checkout devin/1782211329-consolida-cicd-aws
+git checkout main && git pull
 # 1. INFRA (AWS Academy: use o exemplo .academy.example)
 cd ~/oficina-backend-fiap-fase2/infra
 cp terraform.tfvars.academy.example terraform.tfvars   # us-west-2 + k8s 1.31
