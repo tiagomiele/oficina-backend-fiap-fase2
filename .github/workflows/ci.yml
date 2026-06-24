@@ -1,5 +1,5 @@
+# Implementação de teste na esteira CI em 24/06/2026.
 name: CI
-#teste ci
 on:
   push:
     branches: [main]
