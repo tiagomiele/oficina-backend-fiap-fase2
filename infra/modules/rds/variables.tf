@@ -39,3 +39,8 @@ variable "eks_security_group" {
   description = "Security group dos worker nodes do EKS (acesso ao RDS)"
   type        = string
 }
+
+variable "eks_cluster_security_group" {
+  description = "Security group gerenciado pelo EKS, efetivamente usado pelos nodes (acesso ao RDS)"
+  type        = string
+}

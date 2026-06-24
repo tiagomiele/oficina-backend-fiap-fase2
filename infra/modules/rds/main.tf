@@ -17,11 +17,13 @@ resource "aws_security_group" "rds" {
   vpc_id      = var.vpc_id
 
   ingress {
-    description     = "PostgreSQL dos EKS nodes"
-    from_port       = 5432
-    to_port         = 5432
-    protocol        = "tcp"
-    security_groups = [var.eks_security_group]
+    description = "PostgreSQL dos EKS nodes"
+    from_port   = 5432
+    to_port     = 5432
+    protocol    = "tcp"
+    # libera tanto a SG customizada dos nodes quanto a SG gerenciada pelo EKS
+    # (os managed node groups usam efetivamente a cluster security group)
+    security_groups = [var.eks_security_group, var.eks_cluster_security_group]
   }
 
   egress {
@@ -38,11 +40,19 @@ resource "aws_security_group" "rds" {
 
 # ─── RDS PostgreSQL ───
 
+# Descobre dinamicamente a versao 16.x mais recente disponivel na regiao
+# (evita falha quando uma versao fixa nao existe na regiao do lab)
+data "aws_rds_engine_version" "postgres" {
+  engine  = "postgres"
+  version = "16"
+  latest  = true
+}
+
 resource "aws_db_instance" "main" {
   identifier = "${var.project_name}-${var.environment}-db"
 
   engine                = "postgres"
-  engine_version        = "16.3"
+  engine_version        = data.aws_rds_engine_version.postgres.version_actual
   instance_class        = var.db_instance_class
   allocated_storage     = var.allocated_storage
   max_allocated_storage = var.allocated_storage * 2
