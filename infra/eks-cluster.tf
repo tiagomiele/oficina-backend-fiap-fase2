@@ -1,9 +1,9 @@
 # ─── IAM Roles ───
 #
-# Em uma conta AWS normal, o módulo cria as roles do cluster e dos nós.
+# Em uma conta AWS normal, este código cria as roles do cluster e dos nós.
 # Em ambientes restritos (ex.: AWS Academy Learner Lab), onde criar IAM roles
 # é bloqueado, informe uma role pré-existente em var.lab_role_arn (ex.: LabRole)
-# e o módulo a reutiliza para o cluster e para os worker nodes.
+# e ela é reutilizada para o cluster e para os worker nodes.
 
 locals {
   use_lab_role     = var.lab_role_arn != ""
@@ -41,45 +41,6 @@ resource "aws_iam_role_policy_attachment" "cluster_vpc_controller" {
   count      = local.use_lab_role ? 0 : 1
   policy_arn = "arn:aws:iam::aws:policy/AmazonEKSVPCResourceController"
   role       = aws_iam_role.cluster[0].name
-}
-
-# ─── Security Group do Cluster ───
-
-resource "aws_security_group" "cluster" {
-  name        = "${var.project_name}-${var.environment}-eks-cluster-sg"
-  description = "Security group para o cluster EKS"
-  vpc_id      = var.vpc_id
-
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  tags = {
-    Name = "${var.project_name}-${var.environment}-eks-cluster-sg"
-  }
-}
-
-# ─── Cluster EKS ───
-
-resource "aws_eks_cluster" "main" {
-  name     = "${var.project_name}-${var.environment}"
-  version  = var.cluster_version
-  role_arn = local.cluster_role_arn
-
-  vpc_config {
-    subnet_ids              = var.subnet_ids
-    security_group_ids      = [aws_security_group.cluster.id]
-    endpoint_private_access = true
-    endpoint_public_access  = true
-  }
-
-  depends_on = [
-    aws_iam_role_policy_attachment.cluster_policy,
-    aws_iam_role_policy_attachment.cluster_vpc_controller,
-  ]
 }
 
 # ─── IAM Role para os Worker Nodes (apenas quando NÃO se usa a lab_role) ───
@@ -120,12 +81,31 @@ resource "aws_iam_role_policy_attachment" "node_ecr" {
   role       = aws_iam_role.node[0].name
 }
 
+# ─── Security Group do Cluster ───
+
+resource "aws_security_group" "cluster" {
+  name        = "${var.project_name}-${var.environment}-eks-cluster-sg"
+  description = "Security group para o cluster EKS"
+  vpc_id      = aws_vpc.main.id
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "${var.project_name}-${var.environment}-eks-cluster-sg"
+  }
+}
+
 # ─── Security Group dos Nodes ───
 
 resource "aws_security_group" "node" {
   name        = "${var.project_name}-${var.environment}-eks-node-sg"
   description = "Security group para os worker nodes do EKS"
-  vpc_id      = var.vpc_id
+  vpc_id      = aws_vpc.main.id
 
   ingress {
     description     = "Comunicacao com o cluster"
@@ -155,13 +135,37 @@ resource "aws_security_group" "node" {
   }
 }
 
+# ─── Cluster EKS ───
+
+resource "aws_eks_cluster" "main" {
+  name     = "${var.project_name}-${var.environment}"
+  version  = var.cluster_version
+  role_arn = local.cluster_role_arn
+
+  vpc_config {
+    subnet_ids              = aws_subnet.private[*].id
+    security_group_ids      = [aws_security_group.cluster.id]
+    endpoint_private_access = true
+    endpoint_public_access  = true
+  }
+
+  access_config {
+    authentication_mode = "API_AND_CONFIG_MAP"
+  }
+
+  depends_on = [
+    aws_iam_role_policy_attachment.cluster_policy,
+    aws_iam_role_policy_attachment.cluster_vpc_controller,
+  ]
+}
+
 # ─── Node Group ───
 
 resource "aws_eks_node_group" "main" {
   cluster_name    = aws_eks_cluster.main.name
   node_group_name = "${var.project_name}-${var.environment}-nodes"
   node_role_arn   = local.node_role_arn
-  subnet_ids      = var.subnet_ids
+  subnet_ids      = aws_subnet.private[*].id
   instance_types  = [var.node_instance_type]
 
   scaling_config {
@@ -179,4 +183,30 @@ resource "aws_eks_node_group" "main" {
     aws_iam_role_policy_attachment.node_cni,
     aws_iam_role_policy_attachment.node_ecr,
   ]
+}
+
+# ─── Controle de acesso ao cluster (Access Entry + Access Policy Association) ───
+#
+# Concede acesso de administrador do cluster a um IAM role/usuário informado em
+# var.access_entry_role_arn (ex.: a LabRole no AWS Academy ou seu usuário IAM).
+# Igual ao modelo da aula. Fica desativado quando a variável está vazia.
+
+resource "aws_eks_access_entry" "admin" {
+  count         = var.access_entry_role_arn != "" ? 1 : 0
+  cluster_name  = aws_eks_cluster.main.name
+  principal_arn = var.access_entry_role_arn
+  type          = "STANDARD"
+}
+
+resource "aws_eks_access_policy_association" "admin" {
+  count         = var.access_entry_role_arn != "" ? 1 : 0
+  cluster_name  = aws_eks_cluster.main.name
+  principal_arn = var.access_entry_role_arn
+  policy_arn    = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+
+  access_scope {
+    type = "cluster"
+  }
+
+  depends_on = [aws_eks_access_entry.admin]
 }

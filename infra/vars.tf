@@ -16,6 +16,20 @@ variable "project_name" {
   default     = "oficina"
 }
 
+# ---------- State remoto (backend.tf / bucket.tf) ----------
+
+variable "state_bucket_name" {
+  description = "Nome GLOBALMENTE único do bucket S3 que guarda o state do Terraform"
+  type        = string
+  default     = "oficina-terraform-state-change-me"
+}
+
+variable "state_lock_table_name" {
+  description = "Nome da tabela DynamoDB usada para lock do state"
+  type        = string
+  default     = "oficina-terraform-locks"
+}
+
 # ---------- Rede ----------
 
 variable "vpc_cidr" {
@@ -98,6 +112,14 @@ variable "db_allocated_storage" {
 
 variable "lab_role_arn" {
   description = "ARN de uma IAM role pré-existente para reutilizar (ex.: LabRole no AWS Academy, onde criar roles é bloqueado). Deixe vazio em conta AWS normal para o Terraform criar as roles."
+  type        = string
+  default     = ""
+}
+
+# ---------- Controle de acesso ao cluster (EKS Access Entry) ----------
+
+variable "access_entry_role_arn" {
+  description = "ARN de um IAM role/usuário que receberá acesso admin ao cluster via Access Entry (ex.: a LabRole ou seu usuário). Vazio = não cria Access Entry."
   type        = string
   default     = ""
 }

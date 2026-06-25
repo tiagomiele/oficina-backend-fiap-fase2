@@ -83,7 +83,7 @@ terraform apply
 Após a confirmação, o Terraform criará:
 - 1 VPC com 2 subnets públicas e 2 privadas
 - 1 Internet Gateway + 1 NAT Gateway
-- 1 Cluster EKS (Kubernetes 1.29)
+- 1 Cluster EKS (Kubernetes 1.31)
 - 1 Node Group (2-5 instâncias t3.medium)
 - 1 RDS PostgreSQL 16 (db.t3.micro, 20 GB)
 - Security Groups, IAM Roles e Route Tables
@@ -113,7 +113,7 @@ kubectl apply -f ../k8s/
 | Subnets | `aws_subnet` | 2 públicas + 2 privadas (multi-AZ) |
 | Internet Gateway | `aws_internet_gateway` | Acesso público |
 | NAT Gateway | `aws_nat_gateway` | Saída internet para subnets privadas |
-| EKS Cluster | `aws_eks_cluster` | Kubernetes 1.29 |
+| EKS Cluster | `aws_eks_cluster` | Kubernetes 1.31 |
 | Node Group | `aws_eks_node_group` | Worker nodes (t3.medium) |
 | RDS | `aws_db_instance` | PostgreSQL 16, backup 7 dias |
 | Security Groups | `aws_security_group` | Regras de firewall por componente |
@@ -139,10 +139,32 @@ terraform destroy
 
 > **Atenção**: Este comando destrói TODOS os recursos. Dados no RDS serão perdidos (skip_final_snapshot está habilitado para dev).
 
-## Módulos
+## Organização dos arquivos
 
-| Módulo | Diretório | Responsabilidade |
-|---|---|---|
-| **network** | `modules/network/` | VPC, Subnets, IGW, NAT, Route Tables |
-| **eks** | `modules/eks/` | Cluster EKS, IAM Roles, Node Group, Security Groups |
-| **rds** | `modules/rds/` | PostgreSQL 16, Subnet Group, Security Group |
+O Terraform está organizado em **arquivos planos por recurso** (mesmo padrão da
+Aula 8), todos na raiz de `infra/`:
+
+| Arquivo | Conteúdo |
+|---|---|
+| `providers.tf` | Provider AWS + versões |
+| `backend.tf` | Backend remoto S3 (state) — ver bootstrap abaixo |
+| `bucket.tf` | Bucket S3 + tabela DynamoDB para o state remoto |
+| `vars.tf` | Variáveis de entrada |
+| `vpc.tf` | VPC + Elastic IP + NAT Gateway |
+| `subnet.tf` | Subnets públicas e privadas (multi-AZ) |
+| `internet-g.tf` | Internet Gateway |
+| `route-t.tf` | Route Tables + associações |
+| `eks-cluster.tf` | IAM Roles, Security Groups, Cluster EKS, Node Group, Access Entry |
+| `rds.tf` | RDS PostgreSQL 16 + Subnet Group + Security Group |
+| `output.tf` | Outputs (kubeconfig, endpoints, etc.) |
+
+## State remoto (S3) — bootstrap em 2 fases
+
+O `backend.tf` deixa o bloco `backend "s3"` **comentado** porque o bucket
+precisa existir antes. Fluxo:
+
+1. `terraform init` + `terraform apply` (state local) → cria o bucket/lock de `bucket.tf`.
+2. Descomente o bloco em `backend.tf` (ajuste `bucket`/`region`).
+3. `terraform init -migrate-state` → move o state local para o S3.
+
+Passo a passo completo em [`../GUIA-DEPLOY-INFRA-TERRAFORM.md`](../GUIA-DEPLOY-INFRA-TERRAFORM.md).

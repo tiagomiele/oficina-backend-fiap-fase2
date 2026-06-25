@@ -15,6 +15,14 @@ environment = "dev"
 #   aws iam get-role --role-name LabRole --query 'Role.Arn' --output text
 lab_role_arn = "arn:aws:iam::ACCOUNT_ID:role/LabRole"
 
+# Concede acesso admin ao cluster via Access Entry (item da aula).
+# No Academy, aponte para a MESMA LabRole para conseguir usar o kubectl.
+access_entry_role_arn = "arn:aws:iam::ACCOUNT_ID:role/LabRole"
+
+# State remoto (S3). Use um nome de bucket GLOBALMENTE único.
+state_bucket_name     = "oficina-terraform-state-ALTERAR"
+state_lock_table_name = "oficina-terraform-locks"
+
 # Rede
 vpc_cidr           = "10.0.0.0/16"
 availability_zones = ["us-west-2a", "us-west-2b"]

@@ -1,20 +1,18 @@
-# ─── Subnet Group ───
+# ─── RDS PostgreSQL (extra além da aula — banco gerenciado da aplicação) ───
 
 resource "aws_db_subnet_group" "main" {
   name       = "${var.project_name}-${var.environment}-db-subnet"
-  subnet_ids = var.subnet_ids
+  subnet_ids = aws_subnet.private[*].id
 
   tags = {
     Name = "${var.project_name}-${var.environment}-db-subnet"
   }
 }
 
-# ─── Security Group do RDS ───
-
 resource "aws_security_group" "rds" {
   name        = "${var.project_name}-${var.environment}-rds-sg"
   description = "Permite acesso PostgreSQL apenas dos worker nodes EKS"
-  vpc_id      = var.vpc_id
+  vpc_id      = aws_vpc.main.id
 
   ingress {
     description = "PostgreSQL dos EKS nodes"
@@ -23,7 +21,10 @@ resource "aws_security_group" "rds" {
     protocol    = "tcp"
     # libera tanto a SG customizada dos nodes quanto a SG gerenciada pelo EKS
     # (os managed node groups usam efetivamente a cluster security group)
-    security_groups = [var.eks_security_group, var.eks_cluster_security_group]
+    security_groups = [
+      aws_security_group.node.id,
+      aws_eks_cluster.main.vpc_config[0].cluster_security_group_id,
+    ]
   }
 
   egress {
@@ -37,8 +38,6 @@ resource "aws_security_group" "rds" {
     Name = "${var.project_name}-${var.environment}-rds-sg"
   }
 }
-
-# ─── RDS PostgreSQL ───
 
 # Descobre dinamicamente a versao 16.x mais recente disponivel na regiao
 # (evita falha quando uma versao fixa nao existe na regiao do lab)
@@ -54,8 +53,8 @@ resource "aws_db_instance" "main" {
   engine                = "postgres"
   engine_version        = data.aws_rds_engine_version.postgres.version_actual
   instance_class        = var.db_instance_class
-  allocated_storage     = var.allocated_storage
-  max_allocated_storage = var.allocated_storage * 2
+  allocated_storage     = var.db_allocated_storage
+  max_allocated_storage = var.db_allocated_storage * 2
   storage_type          = "gp3"
 
   db_name  = var.db_name
