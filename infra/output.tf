@@ -40,6 +40,6 @@ output "rds_connection_url" {
 }
 
 output "state_bucket_name" {
-  description = "Bucket S3 que guarda o state remoto do Terraform"
-  value       = aws_s3_bucket.tfstate.id
+  description = "Bucket S3 que guarda o state remoto do Terraform (vazio quando create_state_backend = false)"
+  value       = var.create_state_backend ? aws_s3_bucket.tfstate[0].id : ""
 }

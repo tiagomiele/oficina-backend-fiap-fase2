@@ -108,6 +108,12 @@ variable "db_allocated_storage" {
   default     = 20
 }
 
+variable "create_state_backend" {
+  description = "Cria o bucket S3 + tabela DynamoDB para state remoto. Em AWS Academy a role voclabs costuma NÃO ter s3:CreateBucket/dynamodb:CreateTable — deixe false e use state local."
+  type        = bool
+  default     = true
+}
+
 variable "db_engine_version" {
   description = "Versão do engine PostgreSQL do RDS. Use uma versão fixa (ex.: \"16\" ou \"16.4\") — no AWS Academy a LabRole não tem permissão para descobrir a versão dinamicamente (rds:DescribeDBEngineVersions)."
   type        = string

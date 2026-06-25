@@ -5,6 +5,7 @@
 # Defina var.state_bucket_name com um nome GLOBALMENTE único.
 
 resource "aws_s3_bucket" "tfstate" {
+  count  = var.create_state_backend ? 1 : 0
   bucket = var.state_bucket_name
 
   tags = {
@@ -13,7 +14,8 @@ resource "aws_s3_bucket" "tfstate" {
 }
 
 resource "aws_s3_bucket_versioning" "tfstate" {
-  bucket = aws_s3_bucket.tfstate.id
+  count  = var.create_state_backend ? 1 : 0
+  bucket = aws_s3_bucket.tfstate[0].id
 
   versioning_configuration {
     status = "Enabled"
@@ -21,7 +23,8 @@ resource "aws_s3_bucket_versioning" "tfstate" {
 }
 
 resource "aws_s3_bucket_server_side_encryption_configuration" "tfstate" {
-  bucket = aws_s3_bucket.tfstate.id
+  count  = var.create_state_backend ? 1 : 0
+  bucket = aws_s3_bucket.tfstate[0].id
 
   rule {
     apply_server_side_encryption_by_default {
@@ -31,7 +34,8 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "tfstate" {
 }
 
 resource "aws_s3_bucket_public_access_block" "tfstate" {
-  bucket = aws_s3_bucket.tfstate.id
+  count  = var.create_state_backend ? 1 : 0
+  bucket = aws_s3_bucket.tfstate[0].id
 
   block_public_acls       = true
   block_public_policy     = true
@@ -40,6 +44,7 @@ resource "aws_s3_bucket_public_access_block" "tfstate" {
 }
 
 resource "aws_dynamodb_table" "tflock" {
+  count        = var.create_state_backend ? 1 : 0
   name         = var.state_lock_table_name
   billing_mode = "PAY_PER_REQUEST"
   hash_key     = "LockID"

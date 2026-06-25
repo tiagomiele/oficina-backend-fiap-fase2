@@ -19,7 +19,9 @@ lab_role_arn = "arn:aws:iam::ACCOUNT_ID:role/LabRole"
 # No Academy, aponte para a MESMA LabRole para conseguir usar o kubectl.
 access_entry_role_arn = "arn:aws:iam::ACCOUNT_ID:role/LabRole"
 
-# State remoto (S3). Use um nome de bucket GLOBALMENTE único.
+# State remoto (S3). No Learner Lab a role voclabs normalmente NÃO tem permissão
+# para s3:CreateBucket / dynamodb:CreateTable. Deixe false e use state local.
+create_state_backend  = false
 state_bucket_name     = "oficina-terraform-state-ALTERAR"
 state_lock_table_name = "oficina-terraform-locks"
 
