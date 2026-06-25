@@ -39,19 +39,11 @@ resource "aws_security_group" "rds" {
   }
 }
 
-# Descobre dinamicamente a versao 16.x mais recente disponivel na regiao
-# (evita falha quando uma versao fixa nao existe na regiao do lab)
-data "aws_rds_engine_version" "postgres" {
-  engine  = "postgres"
-  version = "16"
-  latest  = true
-}
-
 resource "aws_db_instance" "main" {
   identifier = "${var.project_name}-${var.environment}-db"
 
   engine                = "postgres"
-  engine_version        = data.aws_rds_engine_version.postgres.version_actual
+  engine_version        = var.db_engine_version
   instance_class        = var.db_instance_class
   allocated_storage     = var.db_allocated_storage
   max_allocated_storage = var.db_allocated_storage * 2

@@ -41,3 +41,6 @@ db_name              = "oficina"
 db_username          = "oficina"
 db_password          = "ALTERAR_PARA_SENHA_SEGURA"
 db_allocated_storage = 20
+# No AWS Academy a LabRole nao pode descobrir a versao do engine dinamicamente.
+# Mantenha uma versao fixa do PostgreSQL aqui (ex.: "16" ou "16.4").
+db_engine_version = "16"

@@ -108,6 +108,12 @@ variable "db_allocated_storage" {
   default     = 20
 }
 
+variable "db_engine_version" {
+  description = "Versão do engine PostgreSQL do RDS. Use uma versão fixa (ex.: \"16\" ou \"16.4\") — no AWS Academy a LabRole não tem permissão para descobrir a versão dinamicamente (rds:DescribeDBEngineVersions)."
+  type        = string
+  default     = "16"
+}
+
 # ---------- AWS Academy (Learner Lab) ----------
 
 variable "lab_role_arn" {
