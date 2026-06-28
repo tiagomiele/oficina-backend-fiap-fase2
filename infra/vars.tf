@@ -109,9 +109,9 @@ variable "db_allocated_storage" {
 }
 
 variable "create_state_backend" {
-  description = "Cria o bucket S3 + tabela DynamoDB para state remoto. Em AWS Academy a role voclabs costuma NÃO ter s3:CreateBucket/dynamodb:CreateTable — deixe false e use state local."
+  description = "Cria o bucket S3 + tabela DynamoDB para state remoto. Em AWS Academy a role voclabs costuma NÃO ter s3:CreateBucket/dynamodb:CreateTable, então o default é false (state fica no Terraform Cloud). Em conta AWS normal, defina true se quiser criar o backend S3+DynamoDB."
   type        = bool
-  default     = true
+  default     = false
 }
 
 variable "db_engine_version" {

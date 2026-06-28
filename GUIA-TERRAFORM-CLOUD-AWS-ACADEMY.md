@@ -172,17 +172,28 @@ Ainda em **Variables**, adicione as variáveis do nosso Terraform como
 |-------------------------|---------------------------------------------------|-----------|
 | `aws_region`            | `us-west-2`                                       | não       |
 | `lab_role_arn`          | `arn:aws:iam::SEU_ACCOUNT_ID:role/LabRole`        | não       |
-| `access_entry_role_arn` | `arn:aws:iam::SEU_ACCOUNT_ID:role/LabRole`        | não       |
-| `create_state_backend`  | `false`                                           | não       |
-| `db_password`           | (uma senha forte)                                 | ✅        |
+| `access_entry_role_arn` | `arn:aws:iam::SEU_ACCOUNT_ID:role/voclabs`        | não       |
+| `db_password`           | (uma senha forte, ex.: `Oficina123!`)             | ✅        |
 | `db_engine_version`     | `16`                                              | não       |
 
-> Para descobrir o `SEU_ACCOUNT_ID` / ARN da LabRole, rode no lab:
-> `aws iam get-role --role-name LabRole --query 'Role.Arn' --output text`
+> Para descobrir o `SEU_ACCOUNT_ID`, rode no lab:
+> `aws sts get-caller-identity --query Account --output text`
+> ⚠️ **No Academy o Account ID pode mudar entre labs** — confira no começo de
+> cada sessão e ajuste os ARNs de `lab_role_arn` e `access_entry_role_arn`.
 
-> *Por que `create_state_backend = false`?* Porque no Academy a role não pode
-> criar bucket S3 / DynamoDB — e agora nem precisa, o state fica no Terraform
-> Cloud.
+> ⭐ **`access_entry_role_arn` = `voclabs` (NÃO `LabRole`).** No Academy você se
+> autentica como a role **`voclabs`** (veja `assumed-role/voclabs/...` no
+> `get-caller-identity`). Se a Access Entry for criada pra `LabRole`, o
+> `kubectl` recusa com *"the server has asked for the client to provide
+> credentials"* e você precisa criar a entry na mão. Apontando pra `voclabs`,
+> o `kubectl` já funciona logo após o `update-kubeconfig`.
+
+> *E o `create_state_backend`?* O default no código já é **`false`** (Academy não
+> cria S3/DynamoDB, e o state fica no Terraform Cloud). Só adicione essa variável
+> como `true` se estiver numa conta AWS normal e quiser o backend S3+DynamoDB.
+
+> ℹ️ Não é mais necessário criar a variável `availability_zones`: o default do
+> código já é `["us-west-2a", "us-west-2b"]`.
 
 ---
 
@@ -225,18 +236,47 @@ no cluster. Isso continua sendo feito com `kubectl` (ou pela esteira `cd.yml`):
 ```bash
 # pega o comando pronto do output do Terraform Cloud (aba Outputs) OU rode:
 aws eks update-kubeconfig --region us-west-2 --name oficina-dev
-
-kubectl apply -f k8s/namespace.yaml
-kubectl apply -f k8s/
-kubectl get pods -n oficina -w
+kubectl get nodes   # tem que listar os 2 nós Ready
 ```
+
+### Subir a app apontando pro RDS (recomendado no Academy)
+
+> ⚠️ **Não use `kubectl apply -f k8s/` cru no Academy.** Aquele diretório sobe um
+> **Postgres dentro do cluster** (`postgres-*.yaml`) que depende do driver **EBS
+> CSI** — e o EBS CSI precisa de **IRSA** (role via OIDC), que o Academy bloqueia.
+> Resultado: o PVC fica `Pending` e a app entra em `CrashLoopBackOff`.
+> A arquitetura da Fase 2 usa o **RDS** (criado pelo Terraform) — use o script
+> abaixo, que aponta a app pro RDS e **não** sobe o Postgres no cluster.
+
+**PowerShell (Windows):**
+```powershell
+# passe a MESMA senha que você usou na variável db_password do Terraform
+./k8s/deploy-aws-academy.ps1 -DbPassword "Oficina123!"
+```
+
+**Bash (terminal do lab):**
+```bash
+DB_PASSWORD="Oficina123!" ./k8s/deploy-aws-academy.sh
+```
+
+O script descobre o endpoint do RDS sozinho (evita o bug de host vazio), cria o
+ConfigMap/Secret corretos e sobe Deployment + Service + HPA.
 
 Depois pegue o endereço do LoadBalancer e acesse o Swagger:
 
 ```bash
-kubectl get svc -n oficina
+kubectl get pods -n oficina -w           # espere 1/1 Running
+kubectl get svc oficina-app -n oficina   # pegue o EXTERNAL-IP (ELB, ~2-4 min)
 # acesse http://<EXTERNAL-IP>/swagger-ui/index.html
 ```
+
+> **HPA / autoscaling no Academy:** o HPA já vem configurado (`k8s/hpa.yaml`,
+> 2→5 réplicas a 70% CPU). Porém o `metrics-server` **não funciona no Academy**:
+> o EKS não emite o certificado de *serving* do kubelet (os CSRs
+> `kubelet-serving` ficam `Approved` mas nunca `Issued`), então `kubectl top` e o
+> HPA não leem CPU. É limitação do ambiente, não do projeto. Para demonstrar o
+> escalonamento ao vivo, use `kubectl scale deployment oficina-app -n oficina
+> --replicas=4` (e volte pra 2). Em conta AWS normal o HPA escala sozinho.
 
 > *Terraform Cloud cria a INFRA; quem instala a APP é o kubectl / GitHub Actions
 > (cd.yml). São papéis diferentes.*
@@ -281,3 +321,31 @@ Quando terminar o teste, **destrua tudo** para não gastar crédito:
   **Version Control** se o **Working Directory** está como `infra`.
 - **`iam:CreateRole` negado:** o `lab_role_arn` não foi preenchido — sem ele o
   Terraform tenta criar IAM roles (proibido no Academy). Preencha no Passo 6.3.
+- **`InvalidParameterValue: us-east-1a ... invalid` no apply:** os defaults de
+  `aws_region`/`availability_zones` estão desalinhados. Já corrigido no código
+  (defaults `us-west-2`); se persistir, confira a variável `aws_region` = `us-west-2`.
+- **`kubectl`: "the server has asked for the client to provide credentials":** a
+  Access Entry foi criada pra `LabRole`, mas você usa `voclabs`. Aponte
+  `access_entry_role_arn` pra `voclabs` (Passo 6.3) ou crie a entry na mão:
+  ```bash
+  aws eks create-access-entry --cluster-name oficina-dev --region us-west-2 \
+    --principal-arn arn:aws:iam::SEU_ACCOUNT_ID:role/voclabs --type STANDARD
+  aws eks associate-access-policy --cluster-name oficina-dev --region us-west-2 \
+    --principal-arn arn:aws:iam::SEU_ACCOUNT_ID:role/voclabs \
+    --policy-arn arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy \
+    --access-scope type=cluster
+  ```
+- **App em `CrashLoopBackOff` (probe `:8080 connection refused`):** a app não
+  conecta no banco no boot. Causas comuns:
+  - **DB_URL com host vazio** (`jdbc:postgresql:///oficina`): no PowerShell,
+    `$RDS:5432` é interpretado errado por causa do `:` — use `${RDS}:5432` (com
+    chaves) ou rode o `deploy-aws-academy.ps1`, que já trata isso.
+  - **Senha divergente:** o `DB_PASSWORD` do Secret precisa ser igual à
+    `db_password` do Terraform (senha master do RDS).
+  - Confira: `kubectl get cm oficina-config -n oficina -o jsonpath="{.data.DB_URL}"`.
+- **Pods do `oficina-db` em `Pending` / EBS CSI `CrashLoopBackOff`:** EBS CSI
+  precisa de IRSA (bloqueado no Academy). Não use o Postgres no cluster — use o
+  RDS via `deploy-aws-academy.ps1` (não aplique `k8s/postgres-*.yaml`).
+- **`kubectl logs/top`: `tls: internal error` e HPA `cpu: <unknown>`:** o EKS do
+  Academy não emite o cert de serving do kubelet. Sem solução simples no lab;
+  para o vídeo, demonstre escalonamento com `kubectl scale`.
