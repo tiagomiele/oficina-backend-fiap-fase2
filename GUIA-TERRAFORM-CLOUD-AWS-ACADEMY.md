@@ -173,7 +173,7 @@ Ainda em **Variables**, adicione as variáveis do nosso Terraform como
 | `aws_region`            | `us-west-2`                                       | não       |
 | `lab_role_arn`          | `arn:aws:iam::SEU_ACCOUNT_ID:role/LabRole`        | não       |
 | `access_entry_role_arn` | `arn:aws:iam::SEU_ACCOUNT_ID:role/voclabs`        | não       |
-| `db_password`           | (uma senha forte, ex.: `Oficina123!`)             | ✅        |
+| `db_password`           | (uma senha forte que VOCÊ escolher)               | ✅        |
 | `db_engine_version`     | `16`                                              | não       |
 
 > Para descobrir o `SEU_ACCOUNT_ID`, rode no lab:
@@ -251,13 +251,18 @@ kubectl get nodes   # tem que listar os 2 nós Ready
 **PowerShell (Windows):**
 ```powershell
 # passe a MESMA senha que você usou na variável db_password do Terraform
-./k8s/deploy-aws-academy.ps1 -DbPassword "Oficina123!"
+./k8s/deploy-aws-academy.ps1 -DbPassword "<sua-senha-do-rds>"
 ```
 
 **Bash (terminal do lab):**
 ```bash
-DB_PASSWORD="Oficina123!" ./k8s/deploy-aws-academy.sh
+DB_PASSWORD="<sua-senha-do-rds>" ./k8s/deploy-aws-academy.sh
 ```
+
+> 🔐 Use a **mesma** senha que você definiu na variável `db_password` do Terraform.
+> Para produção, passe também um `JWT_SECRET`/`ADMIN_PASSWORD` próprios (parâmetros
+> `-JwtSecret`/`-AdminPassword` no PowerShell ou variáveis de ambiente no bash);
+> sem isso, os scripts usam valores de **desenvolvimento** e emitem um aviso.
 
 O script descobre o endpoint do RDS sozinho (evita o bug de host vazio), cria o
 ConfigMap/Secret corretos e sobe Deployment + Service + HPA.

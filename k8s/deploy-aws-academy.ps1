@@ -23,15 +23,32 @@
 .PARAMETER Image
   Imagem do container. Padrao: ghcr.io/tiagomiele/oficina-backend-fiap-fase2:latest
 
+.PARAMETER JwtSecret
+  Segredo usado para assinar os JWT. Troque por um valor forte (>= 32 chars).
+
+.PARAMETER AdminPassword
+  Senha do usuario admin inicial. Troque por um valor forte.
+
 .EXAMPLE
-  ./deploy-aws-academy.ps1 -DbPassword "Oficina123!"
+  ./deploy-aws-academy.ps1 -DbPassword "<sua-senha-do-rds>"
 #>
 param(
   [Parameter(Mandatory = $true)]
   [string]$DbPassword,
-  [string]$Region = "us-west-2",
-  [string]$Image  = "ghcr.io/tiagomiele/oficina-backend-fiap-fase2:latest"
+  [string]$Region        = "us-west-2",
+  [string]$Image         = "ghcr.io/tiagomiele/oficina-backend-fiap-fase2:latest",
+  [string]$JwtSecret     = $env:JWT_SECRET,
+  [string]$AdminPassword = $env:ADMIN_PASSWORD
 )
+
+if ([string]::IsNullOrWhiteSpace($JwtSecret)) {
+  $JwtSecret = "change-me-in-production-at-least-32-chars-long-please"
+  Write-Warning "JWT_SECRET nao informado; usando valor de DESENVOLVIMENTO. Em producao passe -JwtSecret ou \$env:JWT_SECRET."
+}
+if ([string]::IsNullOrWhiteSpace($AdminPassword)) {
+  $AdminPassword = "admin123"
+  Write-Warning "ADMIN_PASSWORD nao informado; usando valor de DESENVOLVIMENTO. Em producao passe -AdminPassword ou \$env:ADMIN_PASSWORD."
+}
 
 $ErrorActionPreference = "Stop"
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -79,8 +96,8 @@ metadata:
 type: Opaque
 stringData:
   DB_PASSWORD: "$DbPassword"
-  JWT_SECRET: "change-me-in-production-at-least-32-chars-long-please"
-  ADMIN_PASSWORD: "admin123"
+  JWT_SECRET: "$JwtSecret"
+  ADMIN_PASSWORD: "$AdminPassword"
 "@ | kubectl apply -f -
 
 # 4) App (Deployment + Service + HPA). NAO aplicamos postgres-*.yaml.

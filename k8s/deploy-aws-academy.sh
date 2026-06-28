@@ -9,8 +9,10 @@
 # Service/HPA e NAO aplica os manifests postgres-*.yaml.
 #
 # Uso:
-#   DB_PASSWORD="Oficina123!" ./deploy-aws-academy.sh
-# Variaveis opcionais: REGION (default us-west-2), IMAGE (default GHCR latest)
+#   DB_PASSWORD="<sua-senha-do-rds>" ./deploy-aws-academy.sh
+# Variaveis opcionais:
+#   REGION (default us-west-2), IMAGE (default GHCR latest)
+#   JWT_SECRET / ADMIN_PASSWORD (defaults de DESENVOLVIMENTO; troque em producao)
 set -euo pipefail
 
 REGION="${REGION:-us-west-2}"
@@ -19,8 +21,17 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 if [[ -z "${DB_PASSWORD:-}" ]]; then
   echo "ERRO: defina DB_PASSWORD com a MESMA senha da variavel db_password do Terraform." >&2
-  echo "Ex.: DB_PASSWORD='Oficina123!' ./deploy-aws-academy.sh" >&2
+  echo "Ex.: DB_PASSWORD='<sua-senha-do-rds>' ./deploy-aws-academy.sh" >&2
   exit 1
+fi
+
+if [[ -z "${JWT_SECRET:-}" ]]; then
+  JWT_SECRET="change-me-in-production-at-least-32-chars-long-please"
+  echo "AVISO: JWT_SECRET nao informado; usando valor de DESENVOLVIMENTO. Em producao defina JWT_SECRET." >&2
+fi
+if [[ -z "${ADMIN_PASSWORD:-}" ]]; then
+  ADMIN_PASSWORD="admin123"
+  echo "AVISO: ADMIN_PASSWORD nao informado; usando valor de DESENVOLVIMENTO. Em producao defina ADMIN_PASSWORD." >&2
 fi
 
 echo "==> Descobrindo o endpoint do RDS..."
@@ -61,8 +72,8 @@ metadata:
 type: Opaque
 stringData:
   DB_PASSWORD: "${DB_PASSWORD}"
-  JWT_SECRET: "change-me-in-production-at-least-32-chars-long-please"
-  ADMIN_PASSWORD: "admin123"
+  JWT_SECRET: "${JWT_SECRET}"
+  ADMIN_PASSWORD: "${ADMIN_PASSWORD}"
 YAML
 
 sed "s#image: oficina-backend:latest#image: ${IMAGE}#" "$HERE/app-deployment.yaml" | kubectl apply -f -

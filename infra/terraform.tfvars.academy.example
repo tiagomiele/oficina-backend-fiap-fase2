@@ -16,8 +16,11 @@ environment = "dev"
 lab_role_arn = "arn:aws:iam::ACCOUNT_ID:role/LabRole"
 
 # Concede acesso admin ao cluster via Access Entry (item da aula).
-# No Academy, aponte para a MESMA LabRole para conseguir usar o kubectl.
-access_entry_role_arn = "arn:aws:iam::ACCOUNT_ID:role/LabRole"
+# ⚠️ No Academy aponte para a role "voclabs" (a que você ASSUME na sessão), NÃO a
+# LabRole. Com a LabRole o kubectl recusa com "the server has asked for the client
+# to provide credentials". Confira a role atual com:
+#   aws sts get-caller-identity --query Arn --output text   (mostra .../voclabs/...)
+access_entry_role_arn = "arn:aws:iam::ACCOUNT_ID:role/voclabs"
 
 # State remoto (S3). No Learner Lab a role voclabs normalmente NÃO tem permissão
 # para s3:CreateBucket / dynamodb:CreateTable. Deixe false e use state local.
