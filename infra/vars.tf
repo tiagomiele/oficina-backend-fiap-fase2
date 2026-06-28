@@ -16,6 +16,20 @@ variable "project_name" {
   default     = "oficina"
 }
 
+# ---------- State remoto (backend.tf / bucket.tf) ----------
+
+variable "state_bucket_name" {
+  description = "Nome GLOBALMENTE único do bucket S3 que guarda o state do Terraform"
+  type        = string
+  default     = "oficina-terraform-state-change-me"
+}
+
+variable "state_lock_table_name" {
+  description = "Nome da tabela DynamoDB usada para lock do state"
+  type        = string
+  default     = "oficina-terraform-locks"
+}
+
 # ---------- Rede ----------
 
 variable "vpc_cidr" {
@@ -94,10 +108,30 @@ variable "db_allocated_storage" {
   default     = 20
 }
 
+variable "create_state_backend" {
+  description = "Cria o bucket S3 + tabela DynamoDB para state remoto. Em AWS Academy a role voclabs costuma NÃO ter s3:CreateBucket/dynamodb:CreateTable — deixe false e use state local."
+  type        = bool
+  default     = true
+}
+
+variable "db_engine_version" {
+  description = "Versão do engine PostgreSQL do RDS. Use uma versão fixa (ex.: \"16\" ou \"16.4\") — no AWS Academy a LabRole não tem permissão para descobrir a versão dinamicamente (rds:DescribeDBEngineVersions)."
+  type        = string
+  default     = "16"
+}
+
 # ---------- AWS Academy (Learner Lab) ----------
 
 variable "lab_role_arn" {
   description = "ARN de uma IAM role pré-existente para reutilizar (ex.: LabRole no AWS Academy, onde criar roles é bloqueado). Deixe vazio em conta AWS normal para o Terraform criar as roles."
+  type        = string
+  default     = ""
+}
+
+# ---------- Controle de acesso ao cluster (EKS Access Entry) ----------
+
+variable "access_entry_role_arn" {
+  description = "ARN de um IAM role/usuário que receberá acesso admin ao cluster via Access Entry (ex.: a LabRole ou seu usuário). Vazio = não cria Access Entry."
   type        = string
   default     = ""
 }

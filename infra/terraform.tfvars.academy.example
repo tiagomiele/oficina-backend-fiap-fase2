@@ -15,6 +15,16 @@ environment = "dev"
 #   aws iam get-role --role-name LabRole --query 'Role.Arn' --output text
 lab_role_arn = "arn:aws:iam::ACCOUNT_ID:role/LabRole"
 
+# Concede acesso admin ao cluster via Access Entry (item da aula).
+# No Academy, aponte para a MESMA LabRole para conseguir usar o kubectl.
+access_entry_role_arn = "arn:aws:iam::ACCOUNT_ID:role/LabRole"
+
+# State remoto (S3). No Learner Lab a role voclabs normalmente NÃO tem permissão
+# para s3:CreateBucket / dynamodb:CreateTable. Deixe false e use state local.
+create_state_backend  = false
+state_bucket_name     = "oficina-terraform-state-ALTERAR"
+state_lock_table_name = "oficina-terraform-locks"
+
 # Rede
 vpc_cidr           = "10.0.0.0/16"
 availability_zones = ["us-west-2a", "us-west-2b"]
@@ -33,3 +43,6 @@ db_name              = "oficina"
 db_username          = "oficina"
 db_password          = "ALTERAR_PARA_SENHA_SEGURA"
 db_allocated_storage = 20
+# No AWS Academy a LabRole nao pode descobrir a versao do engine dinamicamente.
+# Mantenha uma versao fixa do PostgreSQL aqui (ex.: "16" ou "16.4").
+db_engine_version = "16"

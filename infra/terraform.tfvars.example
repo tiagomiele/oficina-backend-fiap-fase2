@@ -11,6 +11,14 @@ environment = "dev"
 # Em AWS Academy, aponte para a LabRole (veja terraform.tfvars.academy.example).
 lab_role_arn = ""
 
+# ARN do IAM role/usuário que terá acesso admin ao cluster (Access Entry).
+# Vazio = não cria Access Entry. Ex.: "arn:aws:iam::123456789012:role/SeuRole".
+access_entry_role_arn = ""
+
+# State remoto (S3). Use um nome de bucket GLOBALMENTE único.
+state_bucket_name     = "oficina-terraform-state-ALTERAR"
+state_lock_table_name = "oficina-terraform-locks"
+
 # Rede
 vpc_cidr           = "10.0.0.0/16"
 availability_zones = ["us-east-1a", "us-east-1b"]
