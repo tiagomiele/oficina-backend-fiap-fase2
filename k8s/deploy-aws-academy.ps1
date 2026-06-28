@@ -24,10 +24,14 @@
   Imagem do container. Padrao: ghcr.io/tiagomiele/oficina-backend-fiap-fase2:latest
 
 .PARAMETER JwtSecret
-  Segredo usado para assinar os JWT. Troque por um valor forte (>= 32 chars).
+  Segredo usado para assinar os JWT. Se nao informado, e gerado um valor
+  aleatorio forte a cada execucao.
 
 .PARAMETER AdminPassword
   Senha do usuario admin inicial. Troque por um valor forte.
+
+.PARAMETER DbInstanceId
+  Identificador da instancia RDS criada pelo Terraform. Padrao: oficina-dev-db.
 
 .EXAMPLE
   ./deploy-aws-academy.ps1 -DbPassword "<sua-senha-do-rds>"
@@ -38,12 +42,15 @@ param(
   [string]$Region        = "us-west-2",
   [string]$Image         = "ghcr.io/tiagomiele/oficina-backend-fiap-fase2:latest",
   [string]$JwtSecret     = $env:JWT_SECRET,
-  [string]$AdminPassword = $env:ADMIN_PASSWORD
+  [string]$AdminPassword = $env:ADMIN_PASSWORD,
+  [string]$DbInstanceId  = "oficina-dev-db"
 )
 
 if ([string]::IsNullOrWhiteSpace($JwtSecret)) {
-  $JwtSecret = "change-me-in-production-at-least-32-chars-long-please"
-  Write-Warning "JWT_SECRET nao informado; usando valor de DESENVOLVIMENTO. Em producao passe -JwtSecret ou \$env:JWT_SECRET."
+  $bytes = New-Object 'System.Byte[]' 32
+  [System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
+  $JwtSecret = [Convert]::ToBase64String($bytes)
+  Write-Warning "JWT_SECRET nao informado; gerando um valor aleatorio forte para esta execucao."
 }
 if ([string]::IsNullOrWhiteSpace($AdminPassword)) {
   $AdminPassword = "admin123"
@@ -53,12 +60,12 @@ if ([string]::IsNullOrWhiteSpace($AdminPassword)) {
 $ErrorActionPreference = "Stop"
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 
-Write-Host "==> Descobrindo o endpoint do RDS..." -ForegroundColor Cyan
-$rds = (aws rds describe-db-instances --region $Region --query "DBInstances[0].Endpoint.Address" --output text).Trim()
+Write-Host "==> Descobrindo o endpoint do RDS ($DbInstanceId)..." -ForegroundColor Cyan
+$rds = (aws rds describe-db-instances --region $Region --db-instance-identifier $DbInstanceId --query "DBInstances[0].Endpoint.Address" --output text).Trim()
 if ([string]::IsNullOrWhiteSpace($rds) -or $rds -eq "None") {
-  throw "Endpoint do RDS vazio. A instancia existe e o lab esta com credenciais validas? (aws sts get-caller-identity)"
+  throw "Endpoint do RDS vazio. A instancia '$DbInstanceId' existe e o lab esta com credenciais validas? (aws sts get-caller-identity)"
 }
-$status = (aws rds describe-db-instances --region $Region --query "DBInstances[0].DBInstanceStatus" --output text).Trim()
+$status = (aws rds describe-db-instances --region $Region --db-instance-identifier $DbInstanceId --query "DBInstances[0].DBInstanceStatus" --output text).Trim()
 Write-Host "    RDS: $rds  (status: $status)" -ForegroundColor Green
 if ($status -ne "available") {
   Write-Warning "RDS nao esta 'available' ainda. Aguarde e rode de novo se a app nao subir."
@@ -84,21 +91,15 @@ data:
   ADMIN_EMAIL: "admin@oficina.local"
 "@ | kubectl apply -f -
 
-# 3) Secret com a MESMA senha do RDS (stringData = texto puro, sem base64)
-@"
-apiVersion: v1
-kind: Secret
-metadata:
-  name: oficina-secrets
-  namespace: oficina
-  labels:
-    app.kubernetes.io/part-of: oficina-backend
-type: Opaque
-stringData:
-  DB_PASSWORD: "$DbPassword"
-  JWT_SECRET: "$JwtSecret"
-  ADMIN_PASSWORD: "$AdminPassword"
-"@ | kubectl apply -f -
+# 3) Secret com a MESMA senha do RDS.
+# Usamos 'kubectl create secret --from-literal' (em vez de YAML inline) para que o
+# kubectl faca o escaping correto de senhas com aspas, barras ou outros caracteres.
+kubectl create secret generic oficina-secrets `
+  --namespace oficina `
+  --from-literal=DB_PASSWORD="$DbPassword" `
+  --from-literal=JWT_SECRET="$JwtSecret" `
+  --from-literal=ADMIN_PASSWORD="$AdminPassword" `
+  --dry-run=client -o yaml | kubectl apply -f -
 
 # 4) App (Deployment + Service + HPA). NAO aplicamos postgres-*.yaml.
 $deploy = Get-Content (Join-Path $here "app-deployment.yaml") -Raw

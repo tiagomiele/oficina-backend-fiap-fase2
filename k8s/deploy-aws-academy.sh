@@ -12,11 +12,13 @@
 #   DB_PASSWORD="<sua-senha-do-rds>" ./deploy-aws-academy.sh
 # Variaveis opcionais:
 #   REGION (default us-west-2), IMAGE (default GHCR latest)
-#   JWT_SECRET / ADMIN_PASSWORD (defaults de DESENVOLVIMENTO; troque em producao)
+#   DB_INSTANCE_ID (default oficina-dev-db)
+#   JWT_SECRET (se vazio, e gerado aleatorio) / ADMIN_PASSWORD (default de DEV)
 set -euo pipefail
 
 REGION="${REGION:-us-west-2}"
 IMAGE="${IMAGE:-ghcr.io/tiagomiele/oficina-backend-fiap-fase2:latest}"
+DB_INSTANCE_ID="${DB_INSTANCE_ID:-oficina-dev-db}"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 if [[ -z "${DB_PASSWORD:-}" ]]; then
@@ -26,21 +28,21 @@ if [[ -z "${DB_PASSWORD:-}" ]]; then
 fi
 
 if [[ -z "${JWT_SECRET:-}" ]]; then
-  JWT_SECRET="change-me-in-production-at-least-32-chars-long-please"
-  echo "AVISO: JWT_SECRET nao informado; usando valor de DESENVOLVIMENTO. Em producao defina JWT_SECRET." >&2
+  JWT_SECRET="$(openssl rand -base64 32 2>/dev/null || head -c 32 /dev/urandom | base64)"
+  echo "AVISO: JWT_SECRET nao informado; gerando um valor aleatorio forte para esta execucao." >&2
 fi
 if [[ -z "${ADMIN_PASSWORD:-}" ]]; then
   ADMIN_PASSWORD="admin123"
   echo "AVISO: ADMIN_PASSWORD nao informado; usando valor de DESENVOLVIMENTO. Em producao defina ADMIN_PASSWORD." >&2
 fi
 
-echo "==> Descobrindo o endpoint do RDS..."
-RDS="$(aws rds describe-db-instances --region "$REGION" --query 'DBInstances[0].Endpoint.Address' --output text)"
+echo "==> Descobrindo o endpoint do RDS ($DB_INSTANCE_ID)..."
+RDS="$(aws rds describe-db-instances --region "$REGION" --db-instance-identifier "$DB_INSTANCE_ID" --query 'DBInstances[0].Endpoint.Address' --output text)"
 if [[ -z "$RDS" || "$RDS" == "None" ]]; then
-  echo "ERRO: endpoint do RDS vazio. A instancia existe e as credenciais do lab estao validas?" >&2
+  echo "ERRO: endpoint do RDS vazio. A instancia '$DB_INSTANCE_ID' existe e as credenciais do lab estao validas?" >&2
   exit 1
 fi
-STATUS="$(aws rds describe-db-instances --region "$REGION" --query 'DBInstances[0].DBInstanceStatus' --output text)"
+STATUS="$(aws rds describe-db-instances --region "$REGION" --db-instance-identifier "$DB_INSTANCE_ID" --query 'DBInstances[0].DBInstanceStatus' --output text)"
 echo "    RDS: $RDS (status: $STATUS)"
 
 kubectl apply -f "$HERE/namespace.yaml"
@@ -61,20 +63,14 @@ data:
   ADMIN_EMAIL: "admin@oficina.local"
 YAML
 
-cat <<YAML | kubectl apply -f -
-apiVersion: v1
-kind: Secret
-metadata:
-  name: oficina-secrets
-  namespace: oficina
-  labels:
-    app.kubernetes.io/part-of: oficina-backend
-type: Opaque
-stringData:
-  DB_PASSWORD: "${DB_PASSWORD}"
-  JWT_SECRET: "${JWT_SECRET}"
-  ADMIN_PASSWORD: "${ADMIN_PASSWORD}"
-YAML
+# Secret via 'kubectl create secret --from-literal' (em vez de YAML inline) para que
+# o kubectl faca o escaping correto de senhas com aspas, barras ou outros caracteres.
+kubectl create secret generic oficina-secrets \
+  --namespace oficina \
+  --from-literal=DB_PASSWORD="${DB_PASSWORD}" \
+  --from-literal=JWT_SECRET="${JWT_SECRET}" \
+  --from-literal=ADMIN_PASSWORD="${ADMIN_PASSWORD}" \
+  --dry-run=client -o yaml | kubectl apply -f -
 
 sed "s#image: oficina-backend:latest#image: ${IMAGE}#" "$HERE/app-deployment.yaml" | kubectl apply -f -
 kubectl apply -f "$HERE/app-service.yaml"

@@ -292,8 +292,10 @@ DB_PASSWORD="<sua-senha-do-rds>" ./k8s/deploy-aws-academy.sh
 
 > 🔐 Use a **mesma** senha que você definiu na variável `db_password` do Terraform.
 > Para produção, passe também um `JWT_SECRET`/`ADMIN_PASSWORD` próprios (parâmetros
-> `-JwtSecret`/`-AdminPassword` no PowerShell ou variáveis de ambiente no bash);
-> sem isso, os scripts usam valores de **desenvolvimento** e emitem um aviso.
+> `-JwtSecret`/`-AdminPassword` no PowerShell ou variáveis de ambiente no bash).
+> Se você não informar o `JWT_SECRET`, o script **gera um valor aleatório forte**
+> automaticamente; o `ADMIN_PASSWORD`, se omitido, usa um default de
+> **desenvolvimento** (`admin123`) com aviso.
 
 O script descobre o endpoint do RDS sozinho (evita o bug de host vazio), cria o
 ConfigMap/Secret corretos e sobe Deployment + Service + HPA.
