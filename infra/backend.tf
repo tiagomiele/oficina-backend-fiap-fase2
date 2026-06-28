@@ -36,6 +36,6 @@
 #
 # Passo a passo completo: GUIA-TERRAFORM-CLOUD-AWS-ACADEMY.md
 #
-# terraform {
-#   cloud {}
-# }
+terraform {
+   cloud {}
+}
