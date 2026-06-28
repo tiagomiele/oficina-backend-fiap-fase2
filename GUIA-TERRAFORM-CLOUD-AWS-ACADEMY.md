@@ -43,6 +43,37 @@ e deixar o **Terraform Cloud** fazer por você.
 
 ---
 
+## ⚡ Atalho — Checklist rápido (quando você JÁ configurou uma vez)
+
+Se já fez a configuração inicial (Passos 1 a 3) numa execução anterior, **toda vez
+que reabrir o lab** o roteiro é só este. Os detalhes de cada item estão nas seções
+indicadas.
+
+```
+[ ] 1. Abrir o lab no AWS Academy e clicar "Start Lab" (bolinha verde).
+[ ] 2. AWS Details → AWS CLI → Show → copiar os 3 valores.
+[ ] 3. Terraform Cloud → workspace → Variables → ATUALIZAR os 3
+       Environment variables (AWS_ACCESS_KEY_ID / SECRET / SESSION_TOKEN).   (Passo 4.2)
+[ ] 4. Conferir o Account ID: aws sts get-caller-identity
+       Se mudou, ajustar lab_role_arn e access_entry_role_arn no workspace.   (Passo 4.3)
+[ ] 5. Terraform Cloud → Actions → Start new run (ou git push) → Confirm & Apply.
+       Espera ~15-20 min. Deve terminar "Apply complete! 23 resources added".  (Passo 5)
+[ ] 6. aws eks update-kubeconfig --region us-west-2 --name oficina-dev
+       kubectl get nodes   (2 nós Ready)                                       (Passo 6)
+[ ] 7. ./k8s/deploy-aws-academy.ps1 -DbPassword "<sua-senha-do-rds>"           (Passo 6)
+[ ] 8. kubectl get svc oficina-app -n oficina  → abrir http://<ELB>/swagger-ui/index.html
+[ ] 9. AO TERMINAR: kubectl delete svc oficina-app -n oficina  (libera o ELB)
+       → Terraform Cloud → Settings → Destruction → digitar "delete" → destroy. (Passo 7)
+[ ] 10. AWS Academy → End Lab.
+```
+
+> 💡 **Os 3 erros que mais travam (e a regra de ouro de cada um):**
+> 1. **Credenciais expiradas** → sempre reatualize os 3 valores no Passo 4.2 ao abrir o lab.
+> 2. **`kubectl` recusa acesso** → `access_entry_role_arn` tem que ser **`voclabs`**, não `LabRole`.
+> 3. **App em `CrashLoopBackOff`** → use o script `deploy-aws-academy.ps1` (não `kubectl apply -f k8s/`); ele aponta pro RDS e evita o bug do `DB_URL` vazio.
+
+---
+
 ## 2. Pré-requisitos
 
 - Conta no GitHub com o repositório `oficina-backend-fiap-fase2` (já tem).
@@ -290,14 +321,58 @@ kubectl get svc oficina-app -n oficina   # pegue o EXTERNAL-IP (ELB, ~2-4 min)
 
 ## 9. Passo 7 — Destruir a infra (economizar crédito do lab)
 
-Quando terminar o teste, **destrua tudo** para não gastar crédito:
+Quando terminar o teste, **destrua tudo** para não gastar crédito. A **ordem
+importa** — pular o passo 1 faz o destroy travar no meio (foi um dos pontos que nos
+atrasou).
 
-- **No Terraform Cloud:** workspace → **Settings** → **Destruction and
-  Deletion** → **Queue destroy plan** → confirme.
-- Isso roda um `terraform destroy` na nuvem e remove VPC, EKS, RDS, NAT etc.
+### 9.1 — ANTES de destruir: apagar o LoadBalancer (libera o ELB)
 
-> ⚠️ Faça isso **enquanto o lab ainda está ativo** (as credenciais precisam
-> estar válidas para o destroy funcionar).
+O endereço público (ELB) é criado **pelo Kubernetes**, não pelo Terraform. Se você
+mandar destruir sem apagá-lo, ele fica **órfão segurando a VPC/subnet** e o
+`terraform destroy` falha. Apague o Service e espere o ELB sumir:
+
+```powershell
+kubectl delete svc oficina-app -n oficina
+# espere ~1-2 min e confirme que sumiu (tem que voltar vazio):
+aws elb describe-load-balancers --region us-west-2 --query "LoadBalancerDescriptions[].DNSName" --output text
+```
+
+### 9.2 — Reatualizar as 3 credenciais no Terraform Cloud
+
+O destroy roda no Terraform Cloud, então as credenciais lá precisam estar
+**válidas**. Se o lab ficou aberto muito tempo, refaça o **Passo 4.2** (cole os 3
+valores atuais do AWS CLI). Senão o destroy falha com *"No valid credential
+sources found"*.
+
+### 9.3 — Disparar o destroy
+
+1. Workspace → menu lateral **Settings** → **Destruction and Deletion**.
+2. Clique em **Queue destroy plan**.
+3. ⚠️ Vai aparecer um campo de confirmação pedindo para digitar **`delete`**
+   (a palavra `delete`, literalmente — **não** o nome do workspace). Digite
+   `delete` e o botão habilita.
+4. Abre um run de destruição. Quando o **plan** terminar (lista ~23 recursos para
+   *destroy*), clique **Confirm & Apply** → escreva um comentário → confirme.
+5. ⏳ Leva ~10-15 min (EKS e RDS demoram para apagar). No fim deve aparecer:
+   `Apply complete! Resources: 0 added, 0 changed, 23 destroyed`.
+
+> Alternativa: **Actions** → **Start new run** → marque **Destroy mode** → **Start**.
+
+### 9.4 — Encerrar o lab
+
+Depois do destroy concluído, vá no AWS Academy e clique **End Lab**. Aí o custo
+para de vez.
+
+> 💡 Conferência opcional (tudo deve voltar **vazio**):
+> ```powershell
+> aws eks list-clusters --region us-west-2
+> aws rds describe-db-instances --region us-west-2 --query "DBInstances[].DBInstanceIdentifier"
+> aws elb describe-load-balancers --region us-west-2 --query "LoadBalancerDescriptions[].DNSName"
+> ```
+
+> ⚠️ Faça o destroy **enquanto o lab ainda está ativo** (as credenciais precisam
+> estar válidas). Se o lab expirar antes, reabra, refaça o Passo 4.2 e só então
+> destrua.
 
 ---
 
@@ -354,3 +429,59 @@ Quando terminar o teste, **destrua tudo** para não gastar crédito:
 - **`kubectl logs/top`: `tls: internal error` e HPA `cpu: <unknown>`:** o EKS do
   Academy não emite o cert de serving do kubelet. Sem solução simples no lab;
   para o vídeo, demonstre escalonamento com `kubectl scale`.
+- **`configmap/oficina-config unchanged` e o `DB_URL` continua `///` (host vazio):**
+  é o bug do PowerShell — `$RDS:5432` (com `:` colado) vira vazio, então o YAML
+  fica igual ao anterior e o `apply` diz "unchanged". Use `${RDS}:5432` (com
+  chaves) ou, mais simples, rode o `deploy-aws-academy.ps1` que já trata isso.
+- **Tela de destroy não avança / botão desabilitado:** o campo pede a palavra
+  **`delete`** (literal), não o nome do workspace. Digite `delete` (Passo 9.3).
+- **Destroy falha em VPC/subnet com "DependencyViolation" ou "has dependencies":**
+  sobrou um recurso criado fora do Terraform segurando a rede — quase sempre o
+  **ELB do Service** (apague com `kubectl delete svc oficina-app -n oficina`,
+  Passo 9.1) e rode o destroy de novo.
+- **`Start Lab` esquecido:** se os comandos `aws ...` devolvem erro de credencial
+  logo de cara, confirme que o lab está com a bolinha **verde** (Start Lab feito)
+  e que você reatualizou os 3 valores no Passo 4.2.
+
+---
+
+## 12. Apêndice — Sequência completa do dia (copiar e colar)
+
+Roteiro fim-a-fim já com a ordem certa. Substitua `<sua-senha-do-rds>` pela senha
+que você pôs na variável `db_password` do workspace.
+
+```powershell
+# 0) (no AWS Academy) Start Lab -> AWS Details -> AWS CLI -> Show (copie os 3 valores)
+#    e cole-os nos 3 Environment variables do workspace (Terraform Cloud).
+
+# 1) Conferir conta e região (ajuste os ARNs no workspace se o Account ID mudou)
+aws sts get-caller-identity
+
+# 2) (Terraform Cloud) Actions -> Start new run -> Confirm & Apply  [~15-20 min]
+#    Espere "Apply complete! Resources: 23 added".
+
+# 3) Conectar o kubectl ao cluster
+aws eks update-kubeconfig --region us-west-2 --name oficina-dev
+kubectl get nodes                          # 2 nós Ready
+
+# 4) Subir a aplicação apontando pro RDS (NÃO use kubectl apply -f k8s/)
+./k8s/deploy-aws-academy.ps1 -DbPassword "<sua-senha-do-rds>"
+
+# 5) Acompanhar e pegar a URL pública
+kubectl get pods -n oficina -w             # espere oficina-app 1/1 Running (Ctrl+C p/ sair)
+kubectl get svc oficina-app -n oficina     # copie o EXTERNAL-IP (ELB, ~2-4 min)
+curl.exe http://<ELB>/actuator/health      # esperado: {"status":"UP"}
+# navegador: http://<ELB>/swagger-ui/index.html
+
+# 6) (opcional, p/ o vídeo) demonstrar escalonamento manual
+kubectl get hpa -n oficina
+kubectl scale deployment oficina-app -n oficina --replicas=4
+kubectl get pods -n oficina                # 4 pods
+kubectl scale deployment oficina-app -n oficina --replicas=2
+
+# 7) DESTRUIR (na ordem!) para zerar custo
+kubectl delete svc oficina-app -n oficina  # libera o ELB ANTES do destroy
+#    (Terraform Cloud) Settings -> Destruction and Deletion -> digite "delete"
+#    -> Queue destroy plan -> Confirm & Apply  [~10-15 min, "23 destroyed"]
+#    (AWS Academy) End Lab
+```
