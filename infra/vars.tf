@@ -1,7 +1,7 @@
 variable "aws_region" {
   description = "Região AWS para provisionar os recursos"
   type        = string
-  default     = "us-east-1"
+  default     = "us-west-2"
 }
 
 variable "environment" {
@@ -41,7 +41,7 @@ variable "vpc_cidr" {
 variable "availability_zones" {
   description = "Zonas de disponibilidade"
   type        = list(string)
-  default     = ["us-east-1a", "us-east-1b"]
+  default     = ["us-west-2a", "us-west-2b"]
 }
 
 # ---------- EKS ----------
@@ -109,9 +109,9 @@ variable "db_allocated_storage" {
 }
 
 variable "create_state_backend" {
-  description = "Cria o bucket S3 + tabela DynamoDB para state remoto. Em AWS Academy a role voclabs costuma NÃO ter s3:CreateBucket/dynamodb:CreateTable — deixe false e use state local."
+  description = "Cria o bucket S3 + tabela DynamoDB para state remoto. Em AWS Academy a role voclabs costuma NÃO ter s3:CreateBucket/dynamodb:CreateTable, então o default é false (state fica no Terraform Cloud). Em conta AWS normal, defina true se quiser criar o backend S3+DynamoDB."
   type        = bool
-  default     = true
+  default     = false
 }
 
 variable "db_engine_version" {
