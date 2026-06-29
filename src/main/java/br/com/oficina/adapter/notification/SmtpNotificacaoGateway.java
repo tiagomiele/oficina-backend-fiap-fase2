@@ -5,6 +5,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.mail.MailException;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.stereotype.Service;
@@ -39,7 +40,18 @@ public class SmtpNotificacaoGateway implements NotificacaoGateway {
     mensagem.setTo(destinatario);
     mensagem.setSubject(assunto);
     mensagem.setText(corpo);
-    mailSender.send(mensagem);
-    log.info("E-mail de notificacao enviado para {} | Assunto: {}", destinatario, assunto);
+    // A notificação é um efeito colateral: uma falha de SMTP não pode reverter a
+    // transição de status da OS (este método roda dentro de @Transactional).
+    try {
+      mailSender.send(mensagem);
+      log.info("E-mail de notificacao enviado para {} | Assunto: {}", destinatario, assunto);
+    } catch (MailException ex) {
+      log.error(
+          "Falha ao enviar e-mail para {} | Assunto: {} | Erro: {}",
+          destinatario,
+          assunto,
+          ex.getMessage(),
+          ex);
+    }
   }
 }

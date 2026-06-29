@@ -51,6 +51,12 @@ management:
       probes:
         enabled: true
       show-details: when_authorized
+  health:
+    # Notificação por e-mail é efeito colateral opcional; não deve acoplar a
+    # saúde da aplicação ao servidor SMTP (evita /actuator/health DOWN quando
+    # MAIL_HOST não está configurado, ex.: modo log).
+    mail:
+      enabled: false
 
 springdoc:
   api-docs:
