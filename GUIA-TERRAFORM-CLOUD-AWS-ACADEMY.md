@@ -264,15 +264,54 @@ Já deixamos pronto o workflow `.github/workflows/infra.yml`. Para usá-lo:
 ## 8. Passo 6 — Conectar o kubectl e subir a aplicação
 
 A infra (cluster) está pronta, mas a **aplicação** ainda precisa ser instalada
-no cluster. Isso continua sendo feito com `kubectl` (ou pela esteira `cd.yml`):
+no cluster. Isso continua sendo feito com `kubectl` (ou pela esteira `cd.yml`).
+
+### 8.1 — ⭐ Exportar as credenciais do lab no SEU terminal (a cada sessão)
+
+O `aws` e o `kubectl` rodam **na sua máquina**, então eles precisam das credenciais
+do lab no terminal. Atualizar as credenciais no Terraform Cloud (Passo 4.2) serve
+só pro TFC — **não** vale pro seu PowerShell. Antes de rodar qualquer `aws`/`kubectl`,
+cole os 3 valores do lab (**AWS Details → AWS CLI → Show**) no PowerShell:
+
+```powershell
+$env:AWS_ACCESS_KEY_ID="ASIA...."
+$env:AWS_SECRET_ACCESS_KEY="...."
+$env:AWS_SESSION_TOKEN="...."
+$env:AWS_DEFAULT_REGION="us-west-2"
+```
+
+Confirme que valeram (tem que mostrar a conta/role `voclabs`, sem erro):
+```powershell
+aws sts get-caller-identity
+```
+
+> 💡 **Atalho pra não ficar colando 3 linhas:** copie o bloco inteiro do **AWS CLI**
+> no Academy (o botão de copiar) e rode o helper — ele lê da área de transferência,
+> configura as 3 variáveis e já valida:
+> ```powershell
+> ./k8s/set-aws-creds.ps1
+> ```
+
+> 🔁 **Por que toda sessão?** As credenciais do AWS Academy são **temporárias** e
+> **expiram quando o lab para/encerra** (o lab anexa um deny `voc-cancel-cred` e os
+> comandos passam a dar `AccessDenied`/`security token is invalid`). Isso é uma
+> limitação do Academy — **não tem como evitar** o refresh a cada sessão. Em conta
+> AWS normal você configuraria uma vez (`aws configure`) e pronto. O helper acima é
+> o jeito mais rápido de refazer isso quando reabrir o lab.
+
+### 8.2 — Conectar o kubectl
 
 ```bash
-# pega o comando pronto do output do Terraform Cloud (aba Outputs) OU rode:
 aws eks update-kubeconfig --region us-west-2 --name oficina-dev
 kubectl get nodes   # tem que listar os 2 nós Ready
 ```
 
-### Subir a app apontando pro RDS (recomendado no Academy)
+> Se o `kubectl` der `the server has asked for the client to provide credentials`,
+> veja a seção **Problemas comuns** — no Academy o acesso vem do
+> `bootstrap_cluster_creator_admin_permissions` (cluster criado pela `voclabs` do
+> TFC); a `voclabs` não pode conceder acesso via Access Entry.
+
+### 8.3 — Subir a app apontando pro RDS (recomendado no Academy)
 
 > ⚠️ **Não use `kubectl apply -f k8s/` cru no Academy.** Aquele diretório sobe um
 > **Postgres dentro do cluster** (`postgres-*.yaml`) que depende do driver **EBS
