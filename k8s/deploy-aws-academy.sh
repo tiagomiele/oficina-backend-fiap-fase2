@@ -14,12 +14,31 @@
 #   REGION (default us-west-2), IMAGE (default GHCR latest)
 #   DB_INSTANCE_ID (default oficina-dev-db)
 #   JWT_SECRET (se vazio, e gerado aleatorio) / ADMIN_PASSWORD (default de DEV)
+#   E-mail real (opcional): MAIL_HOST, MAIL_PORT (default 587), MAIL_USERNAME,
+#     MAIL_PASSWORD, MAIL_FROM (default nao-responder@oficina.local). Se MAIL_HOST
+#     for informado, ativa NOTIFICACAO_TIPO=smtp; senao usa modo 'log' (ficticio).
+#   Ex. Mailtrap:
+#     DB_PASSWORD=... MAIL_HOST=sandbox.smtp.mailtrap.io MAIL_USERNAME=... \
+#       MAIL_PASSWORD=... ./deploy-aws-academy.sh
 set -euo pipefail
 
 REGION="${REGION:-us-west-2}"
 IMAGE="${IMAGE:-ghcr.io/tiagomiele/oficina-backend-fiap-fase2:latest}"
 DB_INSTANCE_ID="${DB_INSTANCE_ID:-oficina-dev-db}"
+MAIL_HOST="${MAIL_HOST:-}"
+MAIL_PORT="${MAIL_PORT:-587}"
+MAIL_USERNAME="${MAIL_USERNAME:-}"
+MAIL_PASSWORD="${MAIL_PASSWORD:-}"
+MAIL_FROM="${MAIL_FROM:-nao-responder@oficina.local}"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+if [[ -z "$MAIL_HOST" ]]; then
+  NOTIFICACAO_TIPO="log"
+  echo "==> Notificacao: modo 'log' (e-mail ficticio). Para e-mail real, defina MAIL_HOST/MAIL_USERNAME/MAIL_PASSWORD."
+else
+  NOTIFICACAO_TIPO="smtp"
+  echo "==> Notificacao: modo 'smtp' via ${MAIL_HOST}:${MAIL_PORT}"
+fi
 
 if [[ -z "${DB_PASSWORD:-}" ]]; then
   echo "ERRO: defina DB_PASSWORD com a MESMA senha da variavel db_password do Terraform." >&2
@@ -61,16 +80,23 @@ data:
   SERVER_PORT: "8080"
   SPRING_PROFILES_ACTIVE: ""
   ADMIN_EMAIL: "admin@oficina.local"
+  NOTIFICACAO_TIPO: "${NOTIFICACAO_TIPO}"
+  NOTIFICACAO_REMETENTE: "${MAIL_FROM}"
+  MAIL_HOST: "${MAIL_HOST}"
+  MAIL_PORT: "${MAIL_PORT}"
 YAML
 
 # Secret via 'kubectl create secret --from-literal' (em vez de YAML inline) para que
 # o kubectl faca o escaping correto de senhas com aspas, barras ou outros caracteres.
-kubectl create secret generic oficina-secrets \
-  --namespace oficina \
-  --from-literal=DB_PASSWORD="${DB_PASSWORD}" \
-  --from-literal=JWT_SECRET="${JWT_SECRET}" \
-  --from-literal=ADMIN_PASSWORD="${ADMIN_PASSWORD}" \
-  --dry-run=client -o yaml | kubectl apply -f -
+SECRET_ARGS=(generic oficina-secrets --namespace oficina
+  --from-literal=DB_PASSWORD="${DB_PASSWORD}"
+  --from-literal=JWT_SECRET="${JWT_SECRET}"
+  --from-literal=ADMIN_PASSWORD="${ADMIN_PASSWORD}")
+if [[ "$NOTIFICACAO_TIPO" == "smtp" ]]; then
+  SECRET_ARGS+=(--from-literal=MAIL_USERNAME="${MAIL_USERNAME}")
+  SECRET_ARGS+=(--from-literal=MAIL_PASSWORD="${MAIL_PASSWORD}")
+fi
+kubectl create secret "${SECRET_ARGS[@]}" --dry-run=client -o yaml | kubectl apply -f -
 
 sed "s#image: oficina-backend:latest#image: ${IMAGE}#" "$HERE/app-deployment.yaml" | kubectl apply -f -
 kubectl apply -f "$HERE/app-service.yaml"
