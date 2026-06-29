@@ -38,6 +38,7 @@
 #
 # Ativar terraform
 # Ativar terraform (2)
+# Ativar terraform (3)
 #
 terraform {
   cloud {}
