@@ -36,6 +36,8 @@
 #
 # Passo a passo completo: GUIA-TERRAFORM-CLOUD-AWS-ACADEMY.md
 #
+# Ativar terraform
+#
 terraform {
   cloud {}
 }
