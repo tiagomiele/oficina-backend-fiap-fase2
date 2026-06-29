@@ -15,12 +15,15 @@ environment = "dev"
 #   aws iam get-role --role-name LabRole --query 'Role.Arn' --output text
 lab_role_arn = "arn:aws:iam::ACCOUNT_ID:role/LabRole"
 
-# Concede acesso admin ao cluster via Access Entry (item da aula).
-# ⚠️ No Academy aponte para a role "voclabs" (a que você ASSUME na sessão), NÃO a
-# LabRole. Com a LabRole o kubectl recusa com "the server has asked for the client
-# to provide credentials". Confira a role atual com:
-#   aws sts get-caller-identity --query Arn --output text   (mostra .../voclabs/...)
-access_entry_role_arn = "arn:aws:iam::ACCOUNT_ID:role/voclabs"
+# Acesso admin ao cluster.
+# ⚠️ No AWS Academy DEIXE VAZIO. A role "voclabs" (a que você assume na sessão) tem
+# um deny explícito (policy "voc-cancel-cred") em eks:CreateAccessEntry, então o
+# Terraform NÃO consegue criar a Access Entry — o apply falharia com AccessDenied.
+# Em vez disso, o cluster usa bootstrap_cluster_creator_admin_permissions = true
+# (em eks-cluster.tf): o EKS concede admin automaticamente a quem CRIA o cluster
+# (a voclabs usada pelo Terraform Cloud), e o kubectl funciona logo após o apply.
+# Preencha esta variável SÓ em conta AWS normal (ex.: seu usuário/role IAM).
+access_entry_role_arn = ""
 
 # State remoto (S3). No Learner Lab a role voclabs normalmente NÃO tem permissão
 # para s3:CreateBucket / dynamodb:CreateTable. Deixe false e use state local.

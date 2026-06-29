@@ -151,6 +151,12 @@ resource "aws_eks_cluster" "main" {
 
   access_config {
     authentication_mode = "API_AND_CONFIG_MAP"
+    # Concede admin ao principal que CRIA o cluster (no AWS Academy, a role
+    # "voclabs" usada pelo Terraform Cloud). Isso é feito pelo próprio EKS no
+    # momento da criação — NÃO usa eks:CreateAccessEntry, que a voclabs tem
+    # bloqueado por um deny explícito (policy "voc-cancel-cred"). Assim o kubectl
+    # funciona logo após o apply, sem passo manual de Access Entry.
+    bootstrap_cluster_creator_admin_permissions = true
   }
 
   depends_on = [
