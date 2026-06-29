@@ -22,6 +22,17 @@ spring:
     deserialization:
       fail-on-unknown-properties: true
     default-property-inclusion: non_null
+  mail:
+    host: ${MAIL_HOST:}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
 
 server:
   port: ${SERVER_PORT:8080}
@@ -69,3 +80,7 @@ oficina:
     admin:
       email: ${ADMIN_EMAIL:admin@oficina.local}
       password: ${ADMIN_PASSWORD:admin123}
+  notificacao:
+    # log (default) escreve no log; smtp envia e-mail real via spring.mail.*
+    tipo: ${NOTIFICACAO_TIPO:log}
+    remetente: ${NOTIFICACAO_REMETENTE:nao-responder@oficina.local}

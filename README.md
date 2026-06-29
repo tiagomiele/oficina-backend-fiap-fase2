@@ -46,7 +46,7 @@ O projeto aplica **Domain-Driven Design (DDD)** com padrões táticos (agregados
 - **Conta corrente** da oficina (contas a pagar e contas a receber)
 - **Relatórios** de tempo médio de execução por OS
 - **Consulta pública** de status da OS pelo cliente (sem autenticação)
-- **Notificação fictícia** ao cliente nas transições de status (log via SLF4J)
+- **Notificação** ao cliente nas transições de status (log por default; e-mail real via SMTP configurável)
 
 ---
 
@@ -75,7 +75,7 @@ A Fase 2 evolui a aplicação da Fase 1 para garantir **qualidade, resiliência 
 - **Listagem de OS ativas** com ordenação por prioridade: `EM_EXECUCAO(1) > AGUARDANDO_APROVACAO(2) > EM_DIAGNOSTICO(3) > RECEBIDA(4)` — exclui automaticamente ENTREGUE e CANCELADA
 - Suporte a **múltiplos orçamentos** (rejeitar e refazer)
 - Transições de status controladas com **máquina de estados**
-- **Notificação fictícia** ao cliente em cada transição de status (log com marcador `[NOTIFICAÇÃO FICTÍCIA]`)
+- **Notificação** ao cliente em cada transição de status (`log` com marcador `[NOTIFICAÇÃO FICTÍCIA]` por default, ou **e-mail real via SMTP** com `NOTIFICACAO_TIPO=smtp`)
 
 ### Estoque e Suprimentos
 - Saldo de estoque **nunca negativo** (invariante no domínio)
@@ -149,7 +149,7 @@ A infraestrutura é provisionada via Terraform (`/infra`) na AWS, com a aplicaç
 │  │                                                            │    │
 │  │   Subnets Públicas (2 AZs)        Subnets Privadas (2 AZs) │    │
 │  │   ┌──────────────────┐            ┌──────────────────────┐ │    │
-│  │   │ Internet Gateway │            │  EKS Cluster (1.29)  │ │    │
+│  │   │ Internet Gateway │            │  EKS Cluster (1.31)  │ │    │
 │  │   │ NAT Gateway      │──────────▶ │  Node Group          │ │    │
 │  │   │ LoadBalancer(ELB)│            │  (t3.medium, 2–5)    │ │    │
 │  │   └──────────────────┘            │  ┌────────────────┐  │ │    │
@@ -173,7 +173,7 @@ A infraestrutura é provisionada via Terraform (`/infra`) na AWS, com a aplicaç
 | Componente | Serviço AWS | Função |
 |---|---|---|
 | Rede | VPC + subnets + IGW + NAT | Isolamento e conectividade |
-| Orquestração | EKS (Kubernetes 1.29) | Executa os containers da aplicação |
+| Orquestração | EKS (Kubernetes 1.31) | Executa os containers da aplicação |
 | Compute | EC2 (t3.medium, 2–5 nodes) | Worker nodes do cluster |
 | Banco de dados | RDS PostgreSQL 16 | Persistência gerenciada |
 | Registry | ECR | Armazena a imagem Docker |
@@ -429,7 +429,7 @@ Os scripts estão em [`/infra`](./infra) e provisionam toda a infraestrutura AWS
 
 - **AWS CLI** configurado (`aws configure`)
 - **Terraform** >= 1.5
-- **kubectl** >= 1.29
+- **kubectl** >= 1.30
 
 ### Passo a passo
 
@@ -470,6 +470,29 @@ Ao final, o Terraform exibe os outputs (nome/endpoint do cluster, endpoint do RD
 | `ADMIN_PASSWORD` | `admin123` | Senha do admin criado no bootstrap |
 | `SERVER_PORT` | `8080` | Porta HTTP da aplicação |
 | `SPRING_PROFILES_ACTIVE` | (vazio) | Perfil Spring ativo |
+| `NOTIFICACAO_TIPO` | `log` | `log` registra a notificação no log; `smtp` envia e-mail real |
+| `NOTIFICACAO_REMETENTE` | `nao-responder@oficina.local` | Remetente dos e-mails (modo `smtp`) |
+| `MAIL_HOST` | (vazio) | Host SMTP (ex.: `sandbox.smtp.mailtrap.io`) — usado quando `NOTIFICACAO_TIPO=smtp` |
+| `MAIL_PORT` | `587` | Porta SMTP |
+| `MAIL_USERNAME` | (vazio) | Usuário SMTP |
+| `MAIL_PASSWORD` | (vazio) | Senha SMTP |
+
+### Notificação de status por e-mail
+
+A cada transição de status da OS o cliente é notificado. Há dois modos, selecionados por `NOTIFICACAO_TIPO`:
+
+- **`log`** (default): registra a notificação no log com o marcador `[NOTIFICAÇÃO FICTÍCIA]`. Não exige servidor de e-mail — ideal para desenvolvimento, testes e CI.
+- **`smtp`**: envia um e-mail real via SMTP usando as variáveis `MAIL_*`. Para a demonstração recomenda-se o **[Mailtrap](https://mailtrap.io)** (caixa *sandbox* gratuita):
+
+  ```bash
+  NOTIFICACAO_TIPO=smtp
+  MAIL_HOST=sandbox.smtp.mailtrap.io
+  MAIL_PORT=587
+  MAIL_USERNAME=<usuario-do-inbox>
+  MAIL_PASSWORD=<senha-do-inbox>
+  ```
+
+  Veja [`.env.example`](./.env.example) para o conjunto completo de variáveis.
 
 ---
 
