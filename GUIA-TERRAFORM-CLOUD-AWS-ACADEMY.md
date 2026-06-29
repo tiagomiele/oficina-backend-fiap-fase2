@@ -203,21 +203,23 @@ Ainda em **Variables**, adicione as variáveis do nosso Terraform como
 |-------------------------|---------------------------------------------------|-----------|
 | `aws_region`            | `us-west-2`                                       | não       |
 | `lab_role_arn`          | `arn:aws:iam::SEU_ACCOUNT_ID:role/LabRole`        | não       |
-| `access_entry_role_arn` | `arn:aws:iam::SEU_ACCOUNT_ID:role/voclabs`        | não       |
 | `db_password`           | (uma senha forte que VOCÊ escolher)               | ✅        |
 | `db_engine_version`     | `16`                                              | não       |
 
 > Para descobrir o `SEU_ACCOUNT_ID`, rode no lab:
 > `aws sts get-caller-identity --query Account --output text`
 > ⚠️ **No Academy o Account ID pode mudar entre labs** — confira no começo de
-> cada sessão e ajuste os ARNs de `lab_role_arn` e `access_entry_role_arn`.
+> cada sessão e ajuste o ARN de `lab_role_arn`.
 
-> ⭐ **`access_entry_role_arn` = `voclabs` (NÃO `LabRole`).** No Academy você se
-> autentica como a role **`voclabs`** (veja `assumed-role/voclabs/...` no
-> `get-caller-identity`). Se a Access Entry for criada pra `LabRole`, o
-> `kubectl` recusa com *"the server has asked for the client to provide
-> credentials"* e você precisa criar a entry na mão. Apontando pra `voclabs`,
-> o `kubectl` já funciona logo após o `update-kubeconfig`.
+> ⭐ **Não crie a variável `access_entry_role_arn` no Academy (deixe sem definir).**
+> A role **`voclabs`** (a que você assume) tem um **deny explícito** (policy
+> `voc-cancel-cred`) em `eks:CreateAccessEntry`, então se você apontar essa
+> variável pra `voclabs` o **apply falha** com `AccessDenied`. O acesso admin do
+> `kubectl` vem do **`bootstrap_cluster_creator_admin_permissions = true`** já
+> configurado no `infra/eks-cluster.tf`: o EKS concede admin a quem **cria** o
+> cluster (a `voclabs` usada pelo Terraform Cloud), e o `kubectl` funciona logo
+> após o `update-kubeconfig`, sem nenhum passo manual de Access Entry. Em conta
+> AWS normal, aí sim você pode preencher `access_entry_role_arn` com seu IAM.
 
 > *E o `create_state_backend`?* O default no código já é **`false`** (Academy não
 > cria S3/DynamoDB, e o state fica no Terraform Cloud). Só adicione essa variável
@@ -262,15 +264,54 @@ Já deixamos pronto o workflow `.github/workflows/infra.yml`. Para usá-lo:
 ## 8. Passo 6 — Conectar o kubectl e subir a aplicação
 
 A infra (cluster) está pronta, mas a **aplicação** ainda precisa ser instalada
-no cluster. Isso continua sendo feito com `kubectl` (ou pela esteira `cd.yml`):
+no cluster. Isso continua sendo feito com `kubectl` (ou pela esteira `cd.yml`).
+
+### 8.1 — ⭐ Exportar as credenciais do lab no SEU terminal (a cada sessão)
+
+O `aws` e o `kubectl` rodam **na sua máquina**, então eles precisam das credenciais
+do lab no terminal. Atualizar as credenciais no Terraform Cloud (Passo 4.2) serve
+só pro TFC — **não** vale pro seu PowerShell. Antes de rodar qualquer `aws`/`kubectl`,
+cole os 3 valores do lab (**AWS Details → AWS CLI → Show**) no PowerShell:
+
+```powershell
+$env:AWS_ACCESS_KEY_ID="ASIA...."
+$env:AWS_SECRET_ACCESS_KEY="...."
+$env:AWS_SESSION_TOKEN="...."
+$env:AWS_DEFAULT_REGION="us-west-2"
+```
+
+Confirme que valeram (tem que mostrar a conta/role `voclabs`, sem erro):
+```powershell
+aws sts get-caller-identity
+```
+
+> 💡 **Atalho pra não ficar colando 3 linhas:** copie o bloco inteiro do **AWS CLI**
+> no Academy (o botão de copiar) e rode o helper — ele lê da área de transferência,
+> configura as 3 variáveis e já valida:
+> ```powershell
+> ./k8s/set-aws-creds.ps1
+> ```
+
+> 🔁 **Por que toda sessão?** As credenciais do AWS Academy são **temporárias** e
+> **expiram quando o lab para/encerra** (o lab anexa um deny `voc-cancel-cred` e os
+> comandos passam a dar `AccessDenied`/`security token is invalid`). Isso é uma
+> limitação do Academy — **não tem como evitar** o refresh a cada sessão. Em conta
+> AWS normal você configuraria uma vez (`aws configure`) e pronto. O helper acima é
+> o jeito mais rápido de refazer isso quando reabrir o lab.
+
+### 8.2 — Conectar o kubectl
 
 ```bash
-# pega o comando pronto do output do Terraform Cloud (aba Outputs) OU rode:
 aws eks update-kubeconfig --region us-west-2 --name oficina-dev
 kubectl get nodes   # tem que listar os 2 nós Ready
 ```
 
-### Subir a app apontando pro RDS (recomendado no Academy)
+> Se o `kubectl` der `the server has asked for the client to provide credentials`,
+> veja a seção **Problemas comuns** — no Academy o acesso vem do
+> `bootstrap_cluster_creator_admin_permissions` (cluster criado pela `voclabs` do
+> TFC); a `voclabs` não pode conceder acesso via Access Entry.
+
+### 8.3 — Subir a app apontando pro RDS (recomendado no Academy)
 
 > ⚠️ **Não use `kubectl apply -f k8s/` cru no Academy.** Aquele diretório sobe um
 > **Postgres dentro do cluster** (`postgres-*.yaml`) que depende do driver **EBS
@@ -406,17 +447,20 @@ para de vez.
 - **`InvalidParameterValue: us-east-1a ... invalid` no apply:** os defaults de
   `aws_region`/`availability_zones` estão desalinhados. Já corrigido no código
   (defaults `us-west-2`); se persistir, confira a variável `aws_region` = `us-west-2`.
-- **`kubectl`: "the server has asked for the client to provide credentials":** a
-  Access Entry foi criada pra `LabRole`, mas você usa `voclabs`. Aponte
-  `access_entry_role_arn` pra `voclabs` (Passo 6.3) ou crie a entry na mão:
-  ```bash
-  aws eks create-access-entry --cluster-name oficina-dev --region us-west-2 \
-    --principal-arn arn:aws:iam::SEU_ACCOUNT_ID:role/voclabs --type STANDARD
-  aws eks associate-access-policy --cluster-name oficina-dev --region us-west-2 \
-    --principal-arn arn:aws:iam::SEU_ACCOUNT_ID:role/voclabs \
-    --policy-arn arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy \
-    --access-scope type=cluster
-  ```
+- **`kubectl`: "the server has asked for the client to provide credentials":** o
+  seu principal (`voclabs`) não tem acesso ao cluster. O código já resolve isso
+  com **`bootstrap_cluster_creator_admin_permissions = true`** no `access_config`
+  (`infra/eks-cluster.tf`): o EKS concede admin automaticamente a quem **cria** o
+  cluster (a `voclabs` usada pelo Terraform Cloud), sem usar `eks:CreateAccessEntry`.
+  - ⚠️ **Não tente criar a Access Entry na mão no Academy:** a role `voclabs` tem um
+    **deny explícito** (policy `voc-cancel-cred`) em `eks:CreateAccessEntry`/
+    `AssociateAccessPolicy`/`ListAccessEntries`, então os comandos
+    `aws eks create-access-entry`/`associate-access-policy` retornam `AccessDenied`.
+  - Se o cluster foi criado **antes** dessa configuração, ele precisa ser
+    **recriado** (o `bootstrap_*` só vale no momento da criação). Garanta que as
+    credenciais do Terraform Cloud são as da **sessão atual** (Passo 4.2), que
+    `access_entry_role_arn` está **vazio** (a `voclabs` não consegue criar a entry),
+    e rode o apply de novo.
 - **App em `CrashLoopBackOff` (probe `:8080 connection refused`):** a app não
   conecta no banco no boot. Causas comuns:
   - **DB_URL com host vazio** (`jdbc:postgresql:///oficina`): no PowerShell,
