@@ -32,6 +32,12 @@ services:
       ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@oficina.local}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin123}
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-}
+      NOTIFICACAO_TIPO: ${NOTIFICACAO_TIPO:-log}
+      NOTIFICACAO_REMETENTE: ${NOTIFICACAO_REMETENTE:-nao-responder@oficina.local}
+      MAIL_HOST: ${MAIL_HOST:-}
+      MAIL_PORT: ${MAIL_PORT:-587}
+      MAIL_USERNAME: ${MAIL_USERNAME:-}
+      MAIL_PASSWORD: ${MAIL_PASSWORD:-}
     ports:
       - "8080:8080"
 
