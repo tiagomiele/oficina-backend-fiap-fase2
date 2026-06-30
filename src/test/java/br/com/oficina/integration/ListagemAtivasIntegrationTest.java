@@ -103,10 +103,10 @@ class ListagemAtivasIntegrationTest extends IntegrationTestBase {
         .statusCode(200);
     given().post("/ordens-servico/" + os2 + "/aprovar").then().statusCode(200);
 
-    // GET /ativas — OS2 (EM_EXECUCAO) deve vir primeiro
+    // GET /relatorios/os-por-status — OS2 (EM_EXECUCAO) deve vir primeiro
     given()
         .header("Authorization", "Bearer " + token)
-        .get("/ordens-servico/ativas")
+        .get("/relatorios/os-por-status")
         .then()
         .statusCode(200)
         .body("size()", greaterThanOrEqualTo(2))

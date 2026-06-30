@@ -1,5 +1,6 @@
 package br.com.oficina.adapter.controller;
 
+import br.com.oficina.domain.enums.StatusOrdemServico;
 import br.com.oficina.domain.enums.TipoItem;
 import br.com.oficina.domain.model.Cliente;
 import br.com.oficina.domain.model.EstoquePeca;
@@ -42,6 +43,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -387,6 +389,37 @@ public class AdministrativoOficinaController {
       @Schema(description = "Itens (serviços e peças) a incluir na OS. Opcional.")
           List<ItemAberturaRequest> itens) {}
 
+  @Schema(
+      description =
+          "Dados para criação de uma OS apenas com dados básicos (sem serviços, peças ou"
+              + " orçamento), iniciando em status RECEBIDA.",
+      example =
+          "{\"idCliente\":42,\"placa\":\"ABC1234\","
+              + "\"descricaoProblema\":\"Barulho na suspensão dianteira\"}")
+  public record AbrirOsRecebidaRequest(
+      @Schema(description = "ID do cliente.", example = "42") @NotNull Long idCliente,
+      @Schema(
+              description = "Placa do veículo (Mercosul `ABC1D23` ou antiga `ABC1234`).",
+              example = "ABC1234")
+          @NotBlank
+          String placa,
+      @Schema(
+              description = "Descrição do problema relatado pelo cliente.",
+              example = "Barulho na suspensão dianteira")
+          String descricaoProblema) {}
+
+  @Schema(
+      description = "Novo status de destino para a alteração genérica (contingência).",
+      example = "{\"status\":\"EM_DIAGNOSTICO\"}")
+  public record AlterarStatusRequest(
+      @Schema(
+              description =
+                  "Status de destino. Valores: RECEBIDA, EM_DIAGNOSTICO, AGUARDANDO_APROVACAO,"
+                      + " EM_EXECUCAO, AGUARDANDO_PAGAMENTO, ENTREGUE, CANCELADA.",
+              example = "EM_DIAGNOSTICO")
+          @NotNull
+          StatusOrdemServico status) {}
+
   @Schema(description = "Item (serviço ou peça) para incluir na abertura da OS.")
   public record ItemAberturaRequest(
       @Schema(description = "ID do serviço ou SKU da peça.", example = "1") @NotNull
@@ -678,6 +711,37 @@ public class AdministrativoOficinaController {
     return ResponseEntity.status(HttpStatus.CREATED).body(OrdemServicoResponse.de(os));
   }
 
+  @Operation(
+      summary = "02.6.02 - Abrir OS (Recebida)",
+      description =
+          "Cria a OS apenas com dados básicos (sem serviços, peças ou orçamento), no status"
+              + " RECEBIDA — comportamento da Fase 1. Não confundir com 02.6.01, que pode já"
+              + " incluir itens no orçamento.")
+  @PostMapping("/ordens-servico/recebida")
+  public ResponseEntity<OrdemServicoResponse> abrirOsRecebida(
+      @Valid @RequestBody AbrirOsRecebidaRequest req) {
+    OrdemServico os = osService.abrir(req.idCliente(), req.placa(), req.descricaoProblema());
+    return ResponseEntity.status(HttpStatus.CREATED).body(OrdemServicoResponse.de(os));
+  }
+
+  @Operation(
+      summary = "02.6.03 - Alterar status da OS (contingência)",
+      description =
+          "Função de contingência do perfil administrativo para alterar o status da OS,"
+              + " respeitando as regras: RECEBIDA (somente sem orçamento vinculado);"
+              + " EM_DIAGNOSTICO e AGUARDANDO_APROVACAO (permitidos); EM_EXECUCAO (somente com"
+              + " serviço ou peça vinculada); AGUARDANDO_PAGAMENTO e ENTREGUE (somente com o"
+              + " último orçamento encerrado); CANCELADA (somente com todos os orçamentos"
+              + " cancelados).")
+  @PatchMapping("/ordens-servico/{numeroOs}/status")
+  public OrdemServicoResponse alterarStatusOs(
+      @Parameter(name = "numeroOs", description = DESC_NUMERO_OS, example = EXAMPLE_NUMERO_OS)
+          @PathVariable("numeroOs")
+          String numero,
+      @Valid @RequestBody AlterarStatusRequest req) {
+    return OrdemServicoResponse.de(osService.alterarStatus(numero, req.status()));
+  }
+
   // =====================================================================================
   // 07 - Estoque
   // =====================================================================================
@@ -713,6 +777,18 @@ public class AdministrativoOficinaController {
   public TempoMedioPorOsResponse tempoMedioPorOs() {
     RelatorioGateway.RelatorioResult r = relatorioService.tempoMedioPorOs();
     return TempoMedioPorOsResponse.de(r);
+  }
+
+  @Operation(
+      summary = "02.8.02 - Relatório de OS por status",
+      description =
+          "Retorna as OS em andamento agrupadas por status na ordem: EM_EXECUCAO,"
+              + " AGUARDANDO_APROVACAO, EM_DIAGNOSTICO e RECEBIDA. Dentro de cada status, as OS"
+              + " são ordenadas pela data de inclusão (da mais antiga para a mais recente)."
+              + " Exclui ENTREGUE e CANCELADA.")
+  @GetMapping("/relatorios/os-por-status")
+  public List<OrdemServicoResponse> relatorioOsPorStatus() {
+    return osService.listarAtivas().stream().map(OrdemServicoResponse::de).toList();
   }
 
   // =====================================================================================

@@ -69,6 +69,13 @@ public class TecnicoOficinaController {
               nullable = true)
           BigDecimal precoUnitario) {}
 
+  @Schema(
+      description = "Motivo (opcional) do cancelamento da OS em diagnóstico.",
+      example = "{\"motivo\":\"Cliente desistiu do reparo\"}")
+  public record CancelarDiagnosticoRequest(
+      @Schema(description = "Motivo do cancelamento.", example = "Cliente desistiu do reparo")
+          String motivo) {}
+
   // ===== Endpoints ===================================================================
 
   @Operation(summary = "03.01 - Adicionar serviço ao orçamento atual")
@@ -100,17 +107,6 @@ public class TecnicoOficinaController {
   @GetMapping
   public List<OrdemServicoResponse> listar() {
     return service.listar().stream().map(OrdemServicoResponse::de).toList();
-  }
-
-  @Operation(
-      summary = "03.03.B - Listar OS ativas (com prioridade)",
-      description =
-          "Retorna apenas OS em andamento, ordenadas por prioridade de atendimento:"
-              + " EM_EXECUCAO (1) > AGUARDANDO_APROVACAO (2) > EM_DIAGNOSTICO (3) >"
-              + " RECEBIDA (4). Exclui ENTREGUE e CANCELADA.")
-  @GetMapping("/ativas")
-  public List<OrdemServicoResponse> listarAtivas() {
-    return service.listarAtivas().stream().map(OrdemServicoResponse::de).toList();
   }
 
   @Operation(summary = "03.04 - Buscar OS pelo número")
@@ -154,5 +150,20 @@ public class TecnicoOficinaController {
           @PathVariable("numeroOs")
           String numero) {
     return OrdemServicoResponse.de(service.entregar(numero));
+  }
+
+  @Operation(
+      summary = "03.08 - Cancelar OS em diagnóstico",
+      description =
+          "Cancela uma OS que esteja em EM_DIAGNOSTICO: cancela todos os orçamentos vinculados,"
+              + " devolve as peças reservadas ao estoque e move a OS para CANCELADA.")
+  @PostMapping("/{numeroOs}/cancelar-diagnostico")
+  public OrdemServicoResponse cancelarDiagnostico(
+      @Parameter(name = "numeroOs", description = DESC_NUMERO_OS, example = EXAMPLE_NUMERO_OS)
+          @PathVariable("numeroOs")
+          String numero,
+      @RequestBody(required = false) CancelarDiagnosticoRequest req) {
+    String motivo = req == null ? null : req.motivo();
+    return OrdemServicoResponse.de(service.cancelarEmDiagnostico(numero, motivo));
   }
 }

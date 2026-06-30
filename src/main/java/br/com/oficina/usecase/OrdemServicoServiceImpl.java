@@ -1,5 +1,6 @@
 package br.com.oficina.usecase;
 
+import br.com.oficina.domain.enums.StatusOrdemServico;
 import br.com.oficina.domain.enums.TipoItem;
 import br.com.oficina.domain.model.Cliente;
 import br.com.oficina.domain.model.Dinheiro;
@@ -203,6 +204,25 @@ public class OrdemServicoServiceImpl {
     return salva;
   }
 
+  @Transactional
+  public OrdemServico cancelarEmDiagnostico(String numero, String motivo) {
+    OrdemServico os = carregar(numero);
+    List<ItemOrcamento> itensCancelados = os.cancelarEmDiagnostico(motivo);
+    devolverPecasAoEstoque(numero, itensCancelados);
+    OrdemServico salva = repo.salvar(os);
+    notificarCliente(salva);
+    return salva;
+  }
+
+  @Transactional
+  public OrdemServico alterarStatus(String numero, StatusOrdemServico novoStatus) {
+    OrdemServico os = carregar(numero);
+    os.alterarStatus(novoStatus);
+    OrdemServico salva = repo.salvar(os);
+    notificarCliente(salva);
+    return salva;
+  }
+
   @Transactional(readOnly = true)
   public OrdemServico consultar(String numero) {
     return carregar(numero);
@@ -218,7 +238,9 @@ public class OrdemServicoServiceImpl {
     return repo.listar().stream()
         .filter(os -> os.getStatus().visivelNaListagem())
         .sorted(
-            java.util.Comparator.comparingInt(os -> os.getStatus().getPrioridadeListagem()))
+            java.util.Comparator.comparingInt(
+                    (OrdemServico os) -> os.getStatus().getPrioridadeListagem())
+                .thenComparing(OrdemServico::getCriadoEm))
         .toList();
   }
 

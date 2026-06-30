@@ -261,6 +261,89 @@ public class OrdemServico extends RaizDeAgregado {
     atualizadoEm = Instant.now();
   }
 
+  /**
+   * Cancela uma OS que está em {@link StatusOrdemServico#EM_DIAGNOSTICO}. Cancela todos os
+   * orçamentos vinculados (todos os itens passam a {@link StatusOrcamentoItem#CANCELADO}) e move a
+   * OS para {@link StatusOrdemServico#CANCELADA}. Retorna os itens que ainda não estavam cancelados
+   * (para devolução das peças ao estoque pelo caso de uso).
+   */
+  public List<ItemOrcamento> cancelarEmDiagnostico(String motivo) {
+    exigirStatus(StatusOrdemServico.EM_DIAGNOSTICO);
+    List<ItemOrcamento> aDevolver =
+        itens.stream().filter(i -> i.getStatus() != StatusOrcamentoItem.CANCELADO).toList();
+    for (ItemOrcamento it : itens) {
+      it.cancelar();
+    }
+    status = StatusOrdemServico.CANCELADA;
+    motivoRejeicao = motivo;
+    recalcularValorTotal();
+    atualizadoEm = Instant.now();
+    return aDevolver;
+  }
+
+  /**
+   * Alteração genérica de status (função de contingência do perfil administrativo). Valida o status
+   * de destino conforme as regras de negócio. Não executa efeitos colaterais financeiros ou de
+   * estoque — apenas a transição de status e o registro dos marcos de execução quando aplicável.
+   */
+  public void alterarStatus(StatusOrdemServico novo) {
+    Objects.requireNonNull(novo, "Novo status é obrigatório");
+    validarDestinoContingencia(novo);
+    this.status = novo;
+    Instant agora = Instant.now();
+    if (novo == StatusOrdemServico.EM_EXECUCAO && inicioExecucao == null) {
+      inicioExecucao = agora;
+    }
+    if (novo == StatusOrdemServico.AGUARDANDO_PAGAMENTO && fimExecucao == null) {
+      fimExecucao = agora;
+    }
+    atualizadoEm = agora;
+  }
+
+  private void validarDestinoContingencia(StatusOrdemServico novo) {
+    switch (novo) {
+      case RECEBIDA ->
+          exigirRegra(itens.isEmpty(), "RECEBIDA só é permitido quando não há orçamento vinculado");
+      case EM_DIAGNOSTICO, AGUARDANDO_APROVACAO -> {
+        // Permitido sem condição adicional.
+      }
+      case EM_EXECUCAO ->
+          exigirRegra(
+              possuiItemVinculado(),
+              "EM_EXECUCAO exige ao menos um serviço ou peça vinculado à OS");
+      case AGUARDANDO_PAGAMENTO, ENTREGUE ->
+          exigirRegra(ultimoOrcamentoEncerrado(), "Operação exige o último orçamento encerrado");
+      case CANCELADA ->
+          exigirRegra(
+              todosOrcamentosCancelados(),
+              "CANCELADA exige que todos os orçamentos vinculados estejam cancelados");
+      case PAGA ->
+          throw new BusinessException(
+              ERRO_ORDEM_SERVICO_STATUS_INVALIDO,
+              "Transição para PAGA deve usar o fluxo de confirmação de pagamento");
+    }
+  }
+
+  private void exigirRegra(boolean condicao, String mensagem) {
+    if (!condicao) {
+      throw new BusinessException(ERRO_ORDEM_SERVICO_STATUS_INVALIDO, mensagem);
+    }
+  }
+
+  private boolean possuiItemVinculado() {
+    return itens.stream().anyMatch(i -> i.getStatus() != StatusOrcamentoItem.CANCELADO);
+  }
+
+  private boolean ultimoOrcamentoEncerrado() {
+    Orcamento atual = orcamentoAtual();
+    return !atual.getItens().isEmpty() && atual.status() != StatusOrcamentoItem.EM_ABERTO;
+  }
+
+  private boolean todosOrcamentosCancelados() {
+    return !itens.isEmpty()
+        && itens.stream().allMatch(i -> i.getStatus() == StatusOrcamentoItem.CANCELADO);
+  }
+
   private void exigirStatus(StatusOrdemServico esperado) {
     if (status != esperado) {
       throw new BusinessException(
