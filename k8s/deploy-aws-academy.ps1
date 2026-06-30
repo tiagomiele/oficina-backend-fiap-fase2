@@ -33,8 +33,30 @@
 .PARAMETER DbInstanceId
   Identificador da instancia RDS criada pelo Terraform. Padrao: oficina-dev-db.
 
+.PARAMETER MailHost
+  Host SMTP para notificacao por e-mail (ex.: sandbox.smtp.mailtrap.io). Se informado,
+  ativa o modo SMTP (NOTIFICACAO_TIPO=smtp); caso contrario usa o modo 'log' (fic ticio).
+
+.PARAMETER MailPort
+  Porta SMTP. Padrao: 587.
+
+.PARAMETER MailUser
+  Usuario SMTP (no Mailtrap, o 'Username' do inbox).
+
+.PARAMETER MailPassword
+  Senha SMTP (no Mailtrap, o 'Password' do inbox).
+
+.PARAMETER MailFrom
+  Remetente dos e-mails. Padrao: nao-responder@oficina.local.
+
 .EXAMPLE
   ./deploy-aws-academy.ps1 -DbPassword "<sua-senha-do-rds>"
+
+.EXAMPLE
+  # Com e-mail real via Mailtrap (sandbox):
+  ./deploy-aws-academy.ps1 -DbPassword "<senha-rds>" `
+    -MailHost "sandbox.smtp.mailtrap.io" -MailPort "587" `
+    -MailUser "<usuario-mailtrap>" -MailPassword "<senha-mailtrap>"
 #>
 param(
   [Parameter(Mandatory = $true)]
@@ -43,8 +65,22 @@ param(
   [string]$Image         = "ghcr.io/tiagomiele/oficina-backend-fiap-fase2:latest",
   [string]$JwtSecret     = $env:JWT_SECRET,
   [string]$AdminPassword = $env:ADMIN_PASSWORD,
-  [string]$DbInstanceId  = "oficina-dev-db"
+  [string]$DbInstanceId  = "oficina-dev-db",
+  [string]$MailHost      = $env:MAIL_HOST,
+  [string]$MailPort      = "587",
+  [string]$MailUser      = $env:MAIL_USERNAME,
+  [string]$MailPassword  = $env:MAIL_PASSWORD,
+  [string]$MailFrom      = "nao-responder@oficina.local"
 )
+
+# Modo de notificacao: 'smtp' quando um host SMTP foi informado, senao 'log'.
+if ([string]::IsNullOrWhiteSpace($MailHost)) {
+  $NotificacaoTipo = "log"
+  Write-Host "==> Notificacao: modo 'log' (e-mail ficticio). Para e-mail real, passe -MailHost/-MailUser/-MailPassword." -ForegroundColor Yellow
+} else {
+  $NotificacaoTipo = "smtp"
+  Write-Host "==> Notificacao: modo 'smtp' via $MailHost`:$MailPort" -ForegroundColor Green
+}
 
 if ([string]::IsNullOrWhiteSpace($JwtSecret)) {
   $bytes = New-Object 'System.Byte[]' 32
@@ -89,17 +125,26 @@ data:
   SERVER_PORT: "8080"
   SPRING_PROFILES_ACTIVE: ""
   ADMIN_EMAIL: "admin@oficina.local"
+  NOTIFICACAO_TIPO: "${NotificacaoTipo}"
+  NOTIFICACAO_REMETENTE: "${MailFrom}"
+  MAIL_HOST: "${MailHost}"
+  MAIL_PORT: "${MailPort}"
 "@ | kubectl apply -f -
 
 # 3) Secret com a MESMA senha do RDS.
 # Usamos 'kubectl create secret --from-literal' (em vez de YAML inline) para que o
 # kubectl faca o escaping correto de senhas com aspas, barras ou outros caracteres.
-kubectl create secret generic oficina-secrets `
-  --namespace oficina `
-  --from-literal=DB_PASSWORD="$DbPassword" `
-  --from-literal=JWT_SECRET="$JwtSecret" `
-  --from-literal=ADMIN_PASSWORD="$AdminPassword" `
-  --dry-run=client -o yaml | kubectl apply -f -
+$secretArgs = @(
+  "generic", "oficina-secrets", "--namespace", "oficina",
+  "--from-literal=DB_PASSWORD=$DbPassword",
+  "--from-literal=JWT_SECRET=$JwtSecret",
+  "--from-literal=ADMIN_PASSWORD=$AdminPassword"
+)
+if ($NotificacaoTipo -eq "smtp") {
+  $secretArgs += "--from-literal=MAIL_USERNAME=$MailUser"
+  $secretArgs += "--from-literal=MAIL_PASSWORD=$MailPassword"
+}
+kubectl create secret @secretArgs --dry-run=client -o yaml | kubectl apply -f -
 
 # 4) App (Deployment + Service + HPA). NAO aplicamos postgres-*.yaml.
 $deploy = Get-Content (Join-Path $here "app-deployment.yaml") -Raw
