@@ -231,6 +231,102 @@ class OrdemServicoTest {
   }
 
   @Test
+  void cancelarEmDiagnosticoCancelaItensEMudaStatus() {
+    OrdemServico os = nova();
+    os.adicionarPeca(20L, "Filtro", 2, Dinheiro.de("25"));
+    os.adicionarServico(10L, "Troca óleo", 1, Dinheiro.de("100"));
+    assertThat(os.getStatus()).isEqualTo(StatusOrdemServico.EM_DIAGNOSTICO);
+
+    var aDevolver = os.cancelarEmDiagnostico("cliente desistiu");
+
+    assertThat(os.getStatus()).isEqualTo(StatusOrdemServico.CANCELADA);
+    assertThat(os.getMotivoRejeicao()).isEqualTo("cliente desistiu");
+    assertThat(os.getValorTotalConserto()).isEqualTo(Dinheiro.ZERO);
+    assertThat(aDevolver).hasSize(2);
+    assertThat(os.getItens())
+        .allMatch(i -> i.getStatus() == StatusOrcamentoItem.CANCELADO);
+  }
+
+  @Test
+  void cancelarEmDiagnosticoForaDoDiagnosticoFalha() {
+    OrdemServico os = nova();
+    assertThatThrownBy(() -> os.cancelarEmDiagnostico("x"))
+        .isInstanceOf(BusinessException.class);
+  }
+
+  @Test
+  void alterarStatusRecebidaSomenteSemOrcamento() {
+    OrdemServico os = nova();
+    os.adicionarServico(10L, "s", 1, Dinheiro.de("10"));
+    assertThatThrownBy(() -> os.alterarStatus(StatusOrdemServico.RECEBIDA))
+        .isInstanceOf(BusinessException.class);
+
+    OrdemServico semItens = nova();
+    semItens.alterarStatus(StatusOrdemServico.EM_DIAGNOSTICO);
+    semItens.alterarStatus(StatusOrdemServico.RECEBIDA);
+    assertThat(semItens.getStatus()).isEqualTo(StatusOrdemServico.RECEBIDA);
+  }
+
+  @Test
+  void alterarStatusEmExecucaoExigeItem() {
+    OrdemServico semItens = nova();
+    assertThatThrownBy(() -> semItens.alterarStatus(StatusOrdemServico.EM_EXECUCAO))
+        .isInstanceOf(BusinessException.class);
+
+    OrdemServico comItem = nova();
+    comItem.adicionarServico(10L, "s", 1, Dinheiro.de("10"));
+    comItem.alterarStatus(StatusOrdemServico.EM_EXECUCAO);
+    assertThat(comItem.getStatus()).isEqualTo(StatusOrdemServico.EM_EXECUCAO);
+    assertThat(comItem.getInicioExecucao()).isNotNull();
+  }
+
+  @Test
+  void alterarStatusAguardandoPagamentoExigeUltimoOrcamentoEncerrado() {
+    OrdemServico aberto = nova();
+    aberto.adicionarServico(10L, "s", 1, Dinheiro.de("10"));
+    assertThatThrownBy(() -> aberto.alterarStatus(StatusOrdemServico.AGUARDANDO_PAGAMENTO))
+        .isInstanceOf(BusinessException.class);
+
+    OrdemServico encerrado = nova();
+    encerrado.adicionarServico(10L, "s", 1, Dinheiro.de("10"));
+    encerrado.enviarParaAprovacao();
+    encerrado.alterarStatus(StatusOrdemServico.AGUARDANDO_PAGAMENTO);
+    assertThat(encerrado.getStatus()).isEqualTo(StatusOrdemServico.AGUARDANDO_PAGAMENTO);
+    assertThat(encerrado.getFimExecucao()).isNotNull();
+  }
+
+  @Test
+  void alterarStatusCanceladaExigeTodosOrcamentosCancelados() {
+    OrdemServico comAtivo = nova();
+    comAtivo.adicionarServico(10L, "s", 1, Dinheiro.de("10"));
+    assertThatThrownBy(() -> comAtivo.alterarStatus(StatusOrdemServico.CANCELADA))
+        .isInstanceOf(BusinessException.class);
+
+    OrdemServico cancelavel = nova();
+    cancelavel.adicionarServico(10L, "s", 1, Dinheiro.de("10"));
+    cancelavel.cancelarEmDiagnostico("desistiu");
+    assertThat(cancelavel.getStatus()).isEqualTo(StatusOrdemServico.CANCELADA);
+  }
+
+  @Test
+  void alterarStatusParaPagaNaoEhPermitido() {
+    OrdemServico os = nova();
+    os.adicionarServico(10L, "s", 1, Dinheiro.de("10"));
+    os.enviarParaAprovacao();
+    assertThatThrownBy(() -> os.alterarStatus(StatusOrdemServico.PAGA))
+        .isInstanceOf(BusinessException.class);
+  }
+
+  @Test
+  void alterarStatusDiagnosticoEAprovacaoSaoSemprePermitidos() {
+    OrdemServico os = nova();
+    os.alterarStatus(StatusOrdemServico.EM_DIAGNOSTICO);
+    assertThat(os.getStatus()).isEqualTo(StatusOrdemServico.EM_DIAGNOSTICO);
+    os.alterarStatus(StatusOrdemServico.AGUARDANDO_APROVACAO);
+    assertThat(os.getStatus()).isEqualTo(StatusOrdemServico.AGUARDANDO_APROVACAO);
+  }
+
+  @Test
   void transicoesIndevidasFalham() {
     OrdemServico os = nova();
     assertThatThrownBy(os::aprovar).isInstanceOf(BusinessException.class);

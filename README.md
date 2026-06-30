@@ -72,7 +72,10 @@ A Fase 2 evolui a aplicação da Fase 1 para garantir **qualidade, resiliência 
 
 ### Ordens de Serviço
 - **Abertura unificada** — uma única chamada POST cria a OS já com os itens (serviços e/ou peças) no corpo da requisição
-- **Listagem de OS ativas** com ordenação por prioridade: `EM_EXECUCAO(1) > AGUARDANDO_APROVACAO(2) > EM_DIAGNOSTICO(3) > RECEBIDA(4)` — exclui automaticamente ENTREGUE e CANCELADA
+- **Abertura Recebida** — endpoint dedicado que cria a OS apenas com dados básicos (sem serviços, peças ou orçamento), em status `RECEBIDA` (comportamento da Fase 1)
+- **Relatório de OS por status** (Perfil Administrativo) com ordenação por prioridade `EM_EXECUCAO(1) > AGUARDANDO_APROVACAO(2) > EM_DIAGNOSTICO(3) > RECEBIDA(4)` e, dentro de cada grupo, pela data de inclusão (da mais antiga para a mais recente) — exclui automaticamente ENTREGUE e CANCELADA
+- **Cancelamento em diagnóstico** (Perfil Técnico) — cancela todos os orçamentos vinculados, devolve as peças ao estoque e move a OS para `CANCELADA`
+- **Alteração genérica de status** (contingência do Perfil Administrativo) com validação das regras por status de destino
 - Suporte a **múltiplos orçamentos** (rejeitar e refazer)
 - Transições de status controladas com **máquina de estados**
 - **Notificação** ao cliente em cada transição de status (`log` com marcador `[NOTIFICAÇÃO FICTÍCIA]` por default, ou **e-mail real via SMTP** com `NOTIFICACAO_TIPO=smtp`)
@@ -90,6 +93,7 @@ A Fase 2 evolui a aplicação da Fase 1 para garantir **qualidade, resiliência 
 
 ### Relatórios
 - Tempo médio de execução por OS (baseado nos timestamps `inicio_execucao` e `fim_execucao`)
+- OS por status (grupos na ordem `EM_EXECUCAO > AGUARDANDO_APROVACAO > EM_DIAGNOSTICO > RECEBIDA`; dentro de cada grupo, por data de inclusão crescente)
 
 ### Segurança
 - Autenticação via **JWT** (HMAC-SHA256) com validade configurável (1–1440 min)
@@ -535,15 +539,18 @@ curl http://localhost:8080/v3/api-docs -o oficina-openapi.json
 | **Estoque** | `/estoque` | GET | JWT (admin) |
 | **NF Fornecedor** | `/notas-fiscais-fornecedor` | POST/GET | JWT (admin) |
 | **Abrir OS (unificada)** | `/ordens-servico` | POST | JWT (admin) |
-| **Listar OS ativas** | `/ordens-servico/ativas` | GET | JWT (técnico) |
+| **Abrir OS (Recebida)** | `/ordens-servico/recebida` | POST | JWT (admin) |
+| **Alterar status da OS (contingência)** | `/ordens-servico/{numeroOs}/status` | PATCH | JWT (admin) |
 | **Contas a pagar** | `/contas-a-pagar` | GET | JWT (admin) |
 | **Contas a receber** | `/contas-a-receber` | GET | JWT (admin) |
-| **Relatórios** | `/relatorios/tempo-medio-por-os` | GET | JWT (admin) |
+| **Relatório tempo médio por OS** | `/relatorios/tempo-medio-por-os` | GET | JWT (admin) |
+| **Relatório OS por status** | `/relatorios/os-por-status` | GET | JWT (admin) |
 | **Adicionar serviço à OS** | `/ordens-servico/{numeroOs}/servicos` | POST | JWT (técnico) |
 | **Adicionar peça à OS** | `/ordens-servico/{numeroOs}/pecas` | POST | JWT (técnico) |
 | **Enviar para aprovação** | `/ordens-servico/{numeroOs}/enviar-para-aprovacao` | POST | JWT (técnico) |
 | **Concluir reparo** | `/ordens-servico/{numeroOs}/concluir-reparo` | POST | JWT (técnico) |
 | **Entregar veículo** | `/ordens-servico/{numeroOs}/entregar` | POST | JWT (técnico) |
+| **Cancelar OS em diagnóstico** | `/ordens-servico/{numeroOs}/cancelar-diagnostico` | POST | JWT (técnico) |
 | **Aprovar orçamento** | `/ordens-servico/{numeroOs}/aprovar` | POST | Pública |
 | **Rejeitar e refazer** | `/ordens-servico/{numeroOs}/rejeitar-refazer` | POST | Pública |
 | **Rejeitar e cancelar** | `/ordens-servico/{numeroOs}/rejeitar-cancelar` | POST | Pública |
